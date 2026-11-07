@@ -14,6 +14,7 @@ export GIT_SSH_COMMAND="ssh -i '$TEMP_TAP/key' -o IdentitiesOnly=yes -o StrictHo
 git clone --depth 1 git@github.com:petzkod5/homebrew-tap.git "$TEMP_TAP/tap"
 # Regenerate after each fresh fetch so a racing update can never be downgraded.
 for ATTEMPT in 1 2 3; do
+  echo "Updating Homebrew tap (attempt $ATTEMPT of 3)"
   git -C "$TEMP_TAP/tap" fetch origin main
   git -C "$TEMP_TAP/tap" reset --hard origin/main
   python3 scripts/release.py cask "$TAG" "$TEMP_TAP/tap/Casks/jobsdone.rb"
