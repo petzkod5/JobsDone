@@ -29,7 +29,7 @@ class SwiftLintTests(unittest.TestCase):
         return subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
 
     def run_lint(self, staged=False):
-        command = ["bash", ".githooks/pre-commit"] if staged else ["python3", "scripts/lint.py"]
+        command = [".githooks/pre-commit"] if staged else ["python3", "scripts/lint.py"]
         return subprocess.run(command, cwd=self.root, capture_output=True, text=True)
 
     def test_clean(self):
@@ -62,6 +62,22 @@ class SwiftLintTests(unittest.TestCase):
         (self.root / "nested").mkdir()
         (self.root / "nested/.swiftlint.yml").write_text("disabled_rules: [trailing_semicolon]\n")
         self.assertIn("Nested SwiftLint", self.run_lint().stderr)
+        self.git("add", "nested")
+        self.assertIn("Nested SwiftLint", self.run_lint(staged=True).stderr)
+
+    def test_safety_rules_remain_enabled(self):
+        cases = {
+            "force_cast": "func convert(_ value: Any) -> String { value as! String }\n",
+            "force_try": 'func decode() { _ = try! String(contentsOfFile: "fixture") }\n',
+            "cyclomatic_complexity": "func branches(_ value: Int) {\n" + "".join(
+                f"if value == {number} {{ print(value) }}\n" for number in range(16)) + "}\n",
+        }
+        for rule, source in cases.items():
+            with self.subTest(rule=rule):
+                (self.root / "Example.swift").write_text(source)
+                result = self.run_lint()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(rule, result.stdout)
 
     def test_new_file_with_spaces_and_staged_deletion(self):
         path = self.root / "New File.swift"

@@ -43,7 +43,6 @@ only_rules:
   - return_arrow_whitespace
   - shorthand_operator
   - sorted_imports
-  - superfluous_disable_command
   - syntactic_sugar
   - trailing_newline
   - trailing_semicolon
