@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+TOOLS_DIR=$(cd "$(dirname "$0")" && pwd)
 ZIP=$1
 VERSION=$2
 [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
@@ -30,5 +31,5 @@ done
 codesign --verify --deep --strict "$APP"
 if [[ "${MACOS_SIGNING_ENABLED:-false}" == true ]]; then
   codesign -d -vv "$APP" 2>&1 | grep 'Authority=Developer ID Application:' >/dev/null
-  xcrun stapler validate "$APP"
+  python3 "$TOOLS_DIR/release-ticket.py" validate "$APP"
 fi
