@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0](https://github.com/petzkod5/JobsDone/compare/v1.5.0...v1.6.0) (2026-11-07)
+
+
+### Features
+
+* add registered sound packs and settings selection ([#21](https://github.com/petzkod5/JobsDone/issues/21)) ([348e77e](https://github.com/petzkod5/JobsDone/commit/348e77e7835d818844b114c3f28a77fcca3236a2))
+* alert when issues open in owned repositories ([#22](https://github.com/petzkod5/JobsDone/issues/22)) ([601bc00](https://github.com/petzkod5/JobsDone/commit/601bc002c38fc6e4ce6bd14bd866ab4d632fd621))
+* **settings:** configure GitHub polling and toast duration ([b8dbad3](https://github.com/petzkod5/JobsDone/commit/b8dbad3cf6ecbdfed14ad4cad399dbc2b79620ab))
+
+
+### Bug Fixes
+
+* **release:** retry Apple ticket-service failures ([#13](https://github.com/petzkod5/JobsDone/issues/13)) ([18a69df](https://github.com/petzkod5/JobsDone/commit/18a69dfa8d44900d2780f13adb4156d067f6f045))
+
 ## [1.5.0](https://github.com/petzkod5/JobsDone/compare/v1.4.0...v1.5.0) (2026-11-07)
 
 
