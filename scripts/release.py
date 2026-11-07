@@ -34,7 +34,10 @@ if not tag.startswith('v'):
     raise SystemExit('Expected vX.Y.Z tag')
 v = tag[1:]
 version(v)
-release = api(f'repos/{repo}/releases/tags/{tag}')
+release_id = gh('release', 'view', tag, '--repo', repo, '--json', 'databaseId', '--jq', '.databaseId')
+if not re.fullmatch(r'[1-9]\d*', release_id):
+    raise SystemExit('Invalid release ID')
+release = api(f'repos/{repo}/releases/{release_id}')
 if release['tag_name'] != tag or release['prerelease']:
     raise SystemExit('Release identity mismatch')
 run('git', 'fetch', '--no-tags', 'origin', f'refs/tags/{tag}', 'refs/heads/main')
