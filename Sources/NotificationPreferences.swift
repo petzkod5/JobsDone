@@ -23,6 +23,21 @@ final class NotificationPreferences {
         get { defaults.bool(forKey: "nativeNotifications") }
         set { defaults.set(newValue, forKey: "nativeNotifications") }
     }
+    static let pollingIntervals: [TimeInterval] = [30, 60, 120, 300, 600, 900]
+    static let notificationDurations: [TimeInterval] = [5, 8, 10, 15, 20, 30, 60]
+    var pollingInterval: TimeInterval {
+        get { supportedTime("pollingInterval", choices: Self.pollingIntervals, fallback: 60) }
+        set { defaults.set(Self.pollingIntervals.contains(newValue) ? newValue : 60, forKey: "pollingInterval") }
+    }
+    var notificationDuration: TimeInterval {
+        get { supportedTime("notificationDuration", choices: Self.notificationDurations, fallback: 8) }
+        set { defaults.set(Self.notificationDurations.contains(newValue) ? newValue : 8, forKey: "notificationDuration") }
+    }
+    private func supportedTime(_ key: String, choices: [TimeInterval], fallback: TimeInterval) -> TimeInterval {
+        guard let number = defaults.object(forKey: key) as? NSNumber,
+              choices.contains(number.doubleValue) else { return fallback }
+        return number.doubleValue
+    }
     var ignoredRepositories: [String] {
         Array(Set((defaults.stringArray(forKey: "ignoredRepositories") ?? []).compactMap(Self.canonicalRepository))).sorted()
     }

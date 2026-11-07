@@ -171,7 +171,7 @@ final class PollingSession {
                 commitsState.initialized = true
                 commitsState.lastCheck = started
             } else {
-                failures.append("Commit alerts: \(commitFailures) PR checks failed; other PRs were checked. Failed PRs retry next minute.")
+                failures.append("Commit alerts: \(commitFailures) PR checks failed; other PRs were checked. Failed PRs retry on the next check.")
             }
             state.commits = commitsState
             try store.save(state, login: account)

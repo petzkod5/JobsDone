@@ -2,8 +2,9 @@
 
 ## PR alerts and history
 
-JobsDone checks PRs authored by your active `github.com` account every minute
-while your Mac is awake. GitHub CLI handles sign-in; there is no token to paste
+JobsDone checks PRs authored by your active `github.com` account while your Mac
+is awake. In **Settings…**, choose **GitHub polling interval** from 30 seconds
+to 15 minutes (default: 60 seconds). Changes apply immediately. GitHub CLI handles sign-in; there is no token to paste
 into the app.
 
 New PRs include drafts. Existing PRs stay quiet when monitoring first starts;
@@ -28,7 +29,9 @@ Peon toasts respect notification permission, banner settings, and
 **Show Previews: Never**. Notification Center may show a generic app icon;
 the Peon portrait is also attached as a thumbnail.
 
-Toasts stay for 8 seconds, or 20 seconds for tests. Hovering pauses the stack.
+In **Settings…**, choose **Notification duration** from 5 to 60 seconds
+(default: 8 seconds). The duration applies to new Peon toasts, including tests.
+macOS controls native notification duration. Hovering pauses the toast stack.
 Up to three appear at once; an overflow count points to more updates in the
 histories. Toasts do not expire while VoiceOver or Switch Control is active.
 
