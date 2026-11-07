@@ -2,6 +2,7 @@ name: Build and test
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -9,6 +10,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test commit validation
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
       - name: Test monitor state
         run: ./scripts/test.sh
       - name: Build app
