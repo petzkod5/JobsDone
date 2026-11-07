@@ -24,7 +24,7 @@ final class PeonToastPresenter {
         self.scheduleTimer = scheduleTimer
     }
 
-    func show(id: String, title: String, subtitle: String, body: String, duration: TimeInterval = 8, open: @escaping () -> Void) {
+    func show(id: String, title: String, subtitle: String, body: String, duration: TimeInterval = 8, issueOpened: Bool = false, open: @escaping () -> Void) {
         dismiss(id)
         let panel = ToastPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 136), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Job’s Done — \(subtitle)"
@@ -36,7 +36,7 @@ final class PeonToastPresenter {
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.setAccessibilityLabel("\(title) \(subtitle). \(body)")
-        let card = ToastCard(title: title, subtitle: subtitle, body: body)
+        let card = ToastCard(title: title, subtitle: subtitle, body: body, issueOpened: issueOpened)
         card.onOpen = { [weak self] in open(); self?.dismiss(id) }
         card.onDismiss = { [weak self] in self?.dismiss(id) }
         card.onHover = { [weak self] _ in self?.refreshDismissTimers() }
@@ -47,7 +47,7 @@ final class PeonToastPresenter {
         reposition()
         panel.orderFrontRegardless()
         refreshDismissTimers()
-        NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested, userInfo: [.announcement: "Job’s Done: a pull request update is ready.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested, userInfo: [.announcement: issueOpened ? "Job’s Done: a new issue is ready." : "Job’s Done: a pull request update is ready.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     }
 
     func dismissAll() { for id in entries.map(\.id) { dismiss(id) } }
@@ -114,7 +114,7 @@ private final class ToastCard: NSVisualEffectView {
     private var hoverArea: NSTrackingArea?
     private let overflowLabel = ToastLabel(labelWithString: "")
 
-    init(title: String, subtitle: String, body: String) {
+    init(title: String, subtitle: String, body: String, issueOpened: Bool) {
         super.init(frame: NSRect(x: 0, y: 0, width: 380, height: 136))
         material = .popover
         blendingMode = .behindWindow
@@ -161,7 +161,7 @@ private final class ToastCard: NSVisualEffectView {
         let top = NSStackView(views: [portrait, labels, close])
         top.alignment = .top
         top.spacing = 10
-        let link = ToastButton(title: "Open Pull Request", target: self, action: #selector(openPR))
+        let link = ToastButton(title: issueOpened ? "Open Issue" : "Open Pull Request", target: self, action: #selector(openPR))
         link.keyEquivalent = "\r"
         link.keyEquivalentModifierMask = []
         link.bezelStyle = .rounded

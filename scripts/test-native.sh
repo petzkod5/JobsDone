@@ -4,7 +4,8 @@ cd "$(dirname "$0")/.."
 # Requires a logged-in macOS graphical session. Never launches the installed app.
 EVIDENCE="$PWD/.local/unit-a/native"
 APP="$EVIDENCE/JobsDone Native Tests.app"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+sips -s format png Resources/Peon.gif --out "$APP/Contents/Resources/PeonPortrait.png" >/dev/null
 /usr/libexec/PlistBuddy -c 'Clear dict' "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string org.jobsdone.native-tests' "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string NativeTests' "$APP/Contents/Info.plist"

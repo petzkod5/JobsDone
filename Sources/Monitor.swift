@@ -19,6 +19,15 @@ struct OpenedPR: Codable, Equatable {
     let repository: MergedPR.Repository
 }
 
+struct OpenedIssue: Codable, Equatable {
+    let id: String
+    let title: String
+    let url: String
+    let number: Int
+    let createdAt: Date
+    let repository: MergedPR.Repository
+}
+
 struct CommitPR: Codable, Equatable {
     let id: String
     let title: String
@@ -118,11 +127,33 @@ struct OpenedState: Codable {
     }
 }
 
+struct IssueState: Codable {
+    var startedAt: Date
+    var lastCheck: Date
+    var delivered: Set<String> = []
+    var recent: [OpenedIssue] = []
+
+    func pending(_ issues: [OpenedIssue]) -> [OpenedIssue] {
+        var seen = delivered
+        return issues.sorted { $0.createdAt < $1.createdAt }.filter {
+            $0.createdAt >= startedAt && seen.insert($0.id).inserted
+        }
+    }
+
+    mutating func record(_ issue: OpenedIssue) {
+        delivered.insert(issue.id)
+        recent.removeAll { $0.id == issue.id }
+        recent.insert(issue, at: 0)
+        recent = Array(recent.prefix(10))
+    }
+}
+
 struct AccountState: Codable {
     var startedAt: Date
     var lastCheck: Date
     var delivered: Set<String> = []
     var recent: [MergedPR] = []
+    var issues: IssueState?
     var opened: OpenedState?
     var commits: CommitState?
 
@@ -205,6 +236,13 @@ enum GitHub {
 
     static func opened(login: String, since: Date) throws -> [OpenedPR] {
         try search(query: query.replacingOccurrences(of: "mergedAt", with: "createdAt"), search: searchText(login: login, since: since, opened: true))
+    }
+
+    static func issues(login: String, since: Date, request: ([String]) throws -> Data = GitHub.run) throws -> [OpenedIssue] {
+        let issueQuery = query.replacingOccurrences(of: "PullRequest", with: "Issue")
+            .replacingOccurrences(of: "mergedAt", with: "createdAt")
+        let date = ISO8601DateFormatter().string(from: since)
+        return try search(query: issueQuery, search: "is:issue user:\(login) created:>=\(date) sort:created-asc", request: request)
     }
 
     static func commitCandidates(login: String, since: Date?, baselineSince: Date? = nil) throws -> [CommitPR] {
@@ -296,7 +334,7 @@ enum GitHub {
             : "is:pr is:merged author:\(login) merged:>=\(date) sort:updated-asc"
     }
 
-    private static func search<PR: Decodable>(query: String, search: String) throws -> [PR] {
+    private static func search<PR: Decodable>(query: String, search: String, request: ([String]) throws -> Data = GitHub.run) throws -> [PR] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var cursor: String?
@@ -305,12 +343,12 @@ enum GitHub {
         repeat {
             var args = ["api", "--hostname", "github.com", "graphql", "-f", "query=\(query)", "-f", "q=\(search)"]
             if let cursor { args += ["-f", "cursor=\(cursor)"] }
-            let response = try decoder.decode(SearchResponse<PR>.self, from: run(args))
+            let response = try decoder.decode(SearchResponse<PR>.self, from: request(args))
             guard response.errors == nil, let page = response.data?.search else {
                 throw MonitorError(message: "GitHub returned an incomplete result. Will retry without advancing the checkpoint.")
             }
             guard page.issueCount <= 1000 else {
-                throw MonitorError(message: "Over 1,000 PR events since the checkpoint; narrow the catch-up window before continuing.")
+                throw MonitorError(message: "Over 1,000 GitHub events since the checkpoint; narrow the catch-up window before continuing.")
             }
             prs += page.nodes
             if !page.pageInfo.hasNextPage { return prs }
@@ -378,11 +416,12 @@ struct StateStore {
     func load(login: String, now: Date) throws -> AccountState {
         let file = directory.appendingPathComponent("\(login).json")
         guard FileManager.default.fileExists(atPath: file.path) else {
-            return AccountState(startedAt: now, lastCheck: now, opened: OpenedState(startedAt: now, lastCheck: now), commits: CommitState(startedAt: now, lastCheck: now))
+            return AccountState(startedAt: now, lastCheck: now, issues: IssueState(startedAt: now, lastCheck: now), opened: OpenedState(startedAt: now, lastCheck: now), commits: CommitState(startedAt: now, lastCheck: now))
         }
         do {
             var state = try JSONDecoder().decode(AccountState.self, from: Data(contentsOf: file))
             // Opening alerts begin at upgrade; existing merge checkpoints stay intact.
+            if state.issues == nil { state.issues = IssueState(startedAt: now, lastCheck: now) }
             if state.opened == nil { state.opened = OpenedState(startedAt: now, lastCheck: now) }
             if state.commits == nil { state.commits = CommitState(startedAt: now, lastCheck: now) }
             return state

@@ -8,12 +8,15 @@ struct GitHubResponses {
     var candidates: @MainActor (String, Date?, Date) async throws -> [CommitPR]
     var commits: @MainActor (CommitPR) async throws -> [PRCommit]
 
+    var issues: @MainActor (String, Date) async throws -> [OpenedIssue]
+
     static let live = GitHubResponses(
         login: { try await Task.detached { try GitHub.login() }.value },
         merged: { login, since in try await Task.detached { try GitHub.merged(login: login, since: since) }.value },
         opened: { login, since in try await Task.detached { try GitHub.opened(login: login, since: since) }.value },
         candidates: { login, since, baseline in try await Task.detached { try GitHub.commitCandidates(login: login, since: since, baselineSince: baseline) }.value },
-        commits: { pr in try await Task.detached { try GitHub.commits(on: pr) }.value })
+        commits: { pr in try await Task.detached { try GitHub.commits(on: pr) }.value },
+        issues: { login, since in try await Task.detached { try GitHub.issues(login: login, since: since) }.value })
 }
 
 struct Delivery {
@@ -23,6 +26,7 @@ struct Delivery {
     var subtitle: String
     var body: String
     var url: String
+    var issueOpened = false
     var opened = false
     var committed = false
 }
@@ -38,6 +42,7 @@ final class PollingSession {
     var post: (Delivery) async -> Void
     var login = ""
     var recent: [MergedPR] = []
+    var recentIssues: [OpenedIssue] = []
     var recentOpened: [OpenedPR] = []
     var recentCommits: [CommitNotice] = []
     var lastCheck: Date?
@@ -58,10 +63,11 @@ final class PollingSession {
             let started = now()
             let account = try await github.login()
             guard !paused(), !Task.isCancelled else { return }
-            if login != account { recent = []; recentOpened = []; recentCommits = [] }
+            if login != account { recent = []; recentIssues = []; recentOpened = []; recentCommits = [] }
             login = account
             var state = try store.load(login: account, now: started)
             try store.save(state, login: account)
+            recentIssues = state.issues?.recent ?? []
             recent = state.recent
             recentOpened = state.opened?.recent ?? []
             recentCommits = state.commits?.recent ?? []
@@ -72,17 +78,14 @@ final class PollingSession {
             guard !paused(), !Task.isCancelled else { return }
             let openedResult = await result { try await self.github.opened(account, openedSince) }
             guard !paused(), !Task.isCancelled else { return }
+            var issueState = state.issues!
+            let issueSince = max(issueState.startedAt, issueState.lastCheck.addingTimeInterval(-172800))
+            let issueResult = await result { try await self.github.issues(account, issueSince) }
+            guard !paused(), !Task.isCancelled else { return }
             var failures: [String] = []
-            let prs: [MergedPR]
-            switch mergeResult {
-            case .success(let values): prs = values
-            case .failure(let error): prs = []; failures.append("Merge alerts: " + error.localizedDescription)
-            }
-            let openedPRs: [OpenedPR]
-            switch openedResult {
-            case .success(let values): openedPRs = values
-            case .failure(let error): openedPRs = []; failures.append("Opening alerts: " + error.localizedDescription)
-            }
+            let issues = fetched(issueResult, label: "Issue alerts", failures: &failures)
+            let prs = fetched(mergeResult, label: "Merge alerts", failures: &failures)
+            let openedPRs = fetched(openedResult, label: "Opening alerts", failures: &failures)
             let pendingOpened = openedState.pending(openedPRs)
             let pending = state.pending(prs)
             guard !paused(), !Task.isCancelled else { return }
@@ -90,6 +93,8 @@ final class PollingSession {
             guard !paused(), !Task.isCancelled else { return }
             guard try await deliverOpened(pendingOpened, result: openedResult, state: &state,
                                           openedState: &openedState, account: account, started: started) else { return }
+            guard try await deliverIssues(issueState.pending(issues), result: issueResult, state: &state,
+                                          issueState: &issueState, account: account, started: started) else { return }
             guard try await deliverMerged(pending, result: mergeResult, state: &state,
                                           account: account, started: started) else { return }
             guard try await checkCommits(state: &state, account: account, started: started,
@@ -97,6 +102,15 @@ final class PollingSession {
             lastCheck = now()
             monitorError = failures.isEmpty ? nil : failures.joined(separator: "\n\n")
         } catch { monitorError = error.localizedDescription }
+    }
+
+    private func fetched<Value>(_ result: Result<[Value], Error>, label: String, failures: inout [String]) -> [Value] {
+        switch result {
+        case .success(let values): return values
+        case .failure(let error):
+            failures.append(label + ": " + error.localizedDescription)
+            return []
+        }
     }
 
     private func deliverOpened(_ pending: [OpenedPR], result: Result<[OpenedPR], Error>, state: inout AccountState, openedState: inout OpenedState, account: String, started: Date) async throws -> Bool {
@@ -113,6 +127,24 @@ final class PollingSession {
         }
         if case .success = result { openedState.lastCheck = started }
         state.opened = openedState
+        try store.save(state, login: account)
+        return true
+    }
+
+    private func deliverIssues(_ pending: [OpenedIssue], result: Result<[OpenedIssue], Error>, state: inout AccountState, issueState: inout IssueState, account: String, started: Date) async throws -> Bool {
+        var playedSound = false
+        for issue in pending {
+            guard !paused(), !Task.isCancelled else { return false }
+            if !playedSound { playedSound = await playSound("SomethingNeedDoing", .issueOpened, issue.repository.nameWithOwner) }
+            guard !paused(), !Task.isCancelled else { return false }
+            await post(Delivery(event: .issueOpened, repository: issue.repository.nameWithOwner, id: "issue-" + issue.id, subtitle: "Issue opened · \(issue.repository.nameWithOwner) #\(issue.number)", body: issue.title, url: issue.url, issueOpened: true))
+            issueState.record(issue)
+            state.issues = issueState
+            try store.save(state, login: account)
+            recentIssues = issueState.recent
+        }
+        if case .success = result { issueState.lastCheck = started }
+        state.issues = issueState
         try store.save(state, login: account)
         return true
     }
