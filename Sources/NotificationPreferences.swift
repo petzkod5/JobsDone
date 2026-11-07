@@ -6,8 +6,16 @@ enum NotificationEvent: String, CaseIterable {
 
 /// Installation-wide preferences; account checkpoints remain in StateStore.
 final class NotificationPreferences {
+    let soundPacks: SoundPackRegistry
     let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    init(defaults: UserDefaults = .standard, soundPacks: SoundPackRegistry = .bundled) {
+        self.defaults = defaults
+        self.soundPacks = soundPacks
+    }
+    var soundPack: SoundPack {
+        get { soundPacks.pack(id: defaults.string(forKey: "soundPackID")) }
+        set { defaults.set(soundPacks.pack(id: newValue.id).id, forKey: "soundPackID") }
+    }
 
     func isEnabled(_ event: NotificationEvent) -> Bool {
         defaults.object(forKey: "notify." + event.rawValue) as? Bool ?? true

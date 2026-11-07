@@ -9,7 +9,8 @@ struct AppConfiguration {
     var wait: (TimeInterval) async -> Void = { seconds in
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
-    var soundOutput: ((String) -> Bool)?
+    var soundPacks: SoundPackRegistry = .bundled
+    var soundOutput: ((URL) -> Bool)?
     var notificationOutput: ((UNNotificationRequest) async throws -> Void)?
     var output: ((String) -> Void)?
 

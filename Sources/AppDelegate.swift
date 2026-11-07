@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     init(configuration: AppConfiguration = .production, peonToasts: PeonToastPresenter? = nil) {
         self.peonToasts = peonToasts ?? PeonToastPresenter()
         self.configuration = configuration
-        preferences = NotificationPreferences(defaults: configuration.defaults)
+        preferences = NotificationPreferences(defaults: configuration.defaults, soundPacks: configuration.soundPacks)
         store = StateStore(directory: configuration.historyDirectory)
         paused = configuration.defaults.bool(forKey: "paused")
         super.init()
@@ -537,7 +537,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             defer { busy = false; refreshMenu(); updatePermission() }
             let session = PollingSession(store: store, paused: { self.paused }, prepareDelivery: {
                 self.apply(await NotificationSettingsSnapshot.current())
-            }, playSound: { await self.playSound(resource: $0, event: $1, repository: $2) }, post: {
+            }, playSound: { await self.playSound(event: $0, repository: $1) }, post: {
                 await self.post(event: $0.event, repository: $0.repository, id: $0.id, subtitle: $0.subtitle,
                                 body: $0.body, url: $0.url, issueOpened: $0.issueOpened, opened: $0.opened, committed: $0.committed)
             })
@@ -554,7 +554,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @discardableResult
-    func playSound(resource: String = "JobsDone", event: NotificationEvent? = nil, repository: String = "") async -> Bool {
+    func playSound(event: NotificationEvent? = nil, repository: String = "", soundEvent: NotificationEvent = .merged) async -> Bool {
         func eligible() -> Bool {
             event.map { preferences.allows($0, repository: repository) } ?? true
         }
@@ -562,8 +562,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let remaining = soundEndsAt.timeIntervalSince(configuration.now())
         if remaining > 0 { await configuration.wait(remaining) }
         guard eligible(), !Task.isCancelled, usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return false }
-        if let output = configuration.soundOutput { return output(resource) }
-        guard let path = Bundle.main.path(forResource: resource, ofType: "wav"), let clip = NSSound(contentsOfFile: path, byReference: false) else {
+        let file = preferences.soundPack.fileURL(for: event ?? soundEvent)
+        if let output = configuration.soundOutput { return output(file) }
+        guard let clip = NSSound(contentsOf: file, byReference: false) else {
             soundWarning = "The celebration sound is missing. Reinstall the app to restore it."
             return false
         }
@@ -598,7 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         if !usesPeonToasts && soundEnabled && systemSoundAllowed && nativeSoundTypes.insert(issueOpened ? "issueOpened" : committed ? "committed" : opened ? "opened" : "merged").inserted {
-            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: issueOpened ? "SomethingNeedDoing.wav" : committed ? "Hmmm.wav" : opened ? "WorkWork.wav" : "JobsDone.wav"))
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: preferences.soundPack.notificationSoundName(for: issueOpened ? .issueOpened : committed ? .committed : opened ? .opened : .merged)))
         }
         let portrait = try? NotificationPortrait.attachment()
         if let portrait { content.attachments = [portrait.0] }
@@ -631,7 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task {
             defer { testing = false; refreshMenu() }
             apply(await NotificationSettingsSnapshot.current())
-            await playSound(resource: issueOpened ? "SomethingNeedDoing" : committed ? "Hmmm" : opened ? "WorkWork" : "JobsDone")
+            await playSound(soundEvent: issueOpened ? .issueOpened : committed ? .committed : opened ? .opened : .merged)
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
             await post(id: "jobsdone-test-current", subtitle: issueOpened ? "Sample opened issue notification" : committed ? "Sample commit by another author" : opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open GitHub.", url: issueOpened ? "https://github.com/issues" : "https://github.com/pulls", issueOpened: issueOpened, opened: opened, committed: committed)
             if notificationState != .ready {

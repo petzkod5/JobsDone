@@ -46,7 +46,7 @@ private final class PollFixture {
             if self.issueFailure { throw MonitorError(message: "issues failed") }
             return self.includeIssues ? [self.issue, self.issue] : []
         })
-        session = PollingSession(github: github, store: StateStore(directory: directory), now: { self.start.addingTimeInterval(10) }, paused: { self.paused }, prepareDelivery: {}, playSound: { _, _, _ in self.boundary?("sound"); return false }, post: { [weak self] event in
+        session = PollingSession(github: github, store: StateStore(directory: directory), now: { self.start.addingTimeInterval(10) }, paused: { self.paused }, prepareDelivery: {}, playSound: { _, _ in self.boundary?("sound"); return false }, post: { [weak self] event in
             guard let self else { return }
             await self.app.post(event: event.event, repository: event.repository, id: event.id, subtitle: event.subtitle, body: event.body, url: event.url, issueOpened: event.issueOpened, opened: event.opened, committed: event.committed)
         })
@@ -62,14 +62,14 @@ final class PollingTests {
     @Test @MainActor func testIssueDeliveryHistoryDeduplicationAndAccountIsolation() async throws {
         let f = try PollFixture(); defer { f.clean() }
         f.includeIssues = true
-        var sounds: [String] = []
-        f.session.playSound = { resource, event, repo in
-            if event == .issueOpened { sounds.append(resource); expectEqual(repo, "alice/r") }
+        var sounds: [NotificationEvent] = []
+        f.session.playSound = { event, repo in
+            if event == .issueOpened { sounds.append(event); expectEqual(repo, "alice/r") }
             return true
         }
         await f.session.run()
         expectEqual(f.output.filter { $0 == "issue-i" }, ["issue-i"])
-        expectEqual(sounds, ["SomethingNeedDoing"])
+        expectEqual(sounds, [.issueOpened])
         expectEqual(try f.state().issues!.recent, [f.issue])
         await f.session.run()
         expectEqual(f.output.filter { $0 == "issue-i" }.count, 1)
@@ -247,13 +247,13 @@ final class DeliveryTests {
                 default: break
                 }
             }
-            config.soundOutput = { output.append($0); return true }
+            config.soundOutput = { output.append($0.path); return true }
             let app = AppDelegate(configuration: config)
             app.notificationState = .ready
             app.soundEndsAt = now.addingTimeInterval(5)
             let played = await app.playSound(event: .merged, repository: "o/r")
             expectEqual(waits, [5])
-            expectEqual(output, edit == "none" ? ["JobsDone"] : [])
+            expectEqual(output, edit == "none" ? [prefs.soundPack.fileURL(for: .merged).path] : [])
             expectEqual(played, edit == "none")
         }
     }
@@ -261,7 +261,7 @@ final class DeliveryTests {
         var config = AppConfiguration.isolated(directory: FileManager.default.temporaryDirectory)
         var output: [String] = []
         config.wait = { _ in withUnsafeCurrentTask { $0?.cancel() } }
-        config.soundOutput = { output.append($0); return true }
+        config.soundOutput = { output.append($0.path); return true }
         let app = AppDelegate(configuration: config)
         app.notificationState = .ready
         app.soundEndsAt = Date().addingTimeInterval(5)

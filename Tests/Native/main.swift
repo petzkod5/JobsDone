@@ -52,6 +52,10 @@ MainActor.assumeIsolated {
         remove.performClick(nil)
         require(NotificationPreferences(defaults: config.defaults).ignoredRepositories.isEmpty, "real remove action saved")
         let popups = controls.compactMap { $0 as? NSPopUpButton }
+        let pack = popups.first { $0.accessibilityLabel() == "Sound pack" }!
+        require(pack.titleOfSelectedItem == "Peon", "default sound pack is visible")
+        app.sendAction(pack.action!, to: pack.target, from: pack)
+        require(config.defaults.string(forKey: "soundPackID") == "peon", "sound pack action persists stable ID")
         let polling = popups.first { $0.accessibilityLabel() == "GitHub polling interval" }!
         polling.selectItem(at: 3)
         app.sendAction(polling.action!, to: polling.target, from: polling)
@@ -131,6 +135,19 @@ MainActor.assumeIsolated {
         catch { fputs("FAIL: compositor capture: \(error)\n", stderr); exit(1) }
         capture.waitUntilExit()
         print("Compositor capture exit: \(capture.terminationStatus)")
+        let fixturePack = SoundPack(id: "fixture", name: "Fixture", directory: evidence,
+                                    sounds: ["Fixture.wav"], eventSounds: Dictionary(uniqueKeysWithValues: NotificationEvent.allCases.map { ($0, "Fixture.wav") }))
+        let registry = SoundPackRegistry(packs: [config.soundPacks.defaultPack, fixturePack], defaultID: "peon")
+        let fixtureSettings = NotificationSettingsController(preferences: NotificationPreferences(defaults: config.defaults, soundPacks: registry))
+        let fixturePopup = views(fixtureSettings.window!.contentView!).compactMap { $0 as? NSPopUpButton }
+            .first { $0.accessibilityLabel() == "Sound pack" }!
+        fixturePopup.selectItem(at: 1)
+        app.sendAction(fixturePopup.action!, to: fixturePopup.target, from: fixturePopup)
+        require(NotificationPreferences(defaults: config.defaults, soundPacks: registry).soundPack.id == "fixture", "second registered pack action persists selection")
+        fixtureSettings.refresh()
+        require(fixturePopup.titleOfSelectedItem == "Fixture", "refresh retains second pack selection")
+        config.defaults.removeObject(forKey: "soundPackID")
+        fixtureSettings.close()
         window.close()
         exit(0)
         }
