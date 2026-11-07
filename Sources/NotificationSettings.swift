@@ -119,6 +119,7 @@ final class NotificationSettingsController: NSWindowController {
         var eventRows: [NSView] = []
         for (event, title, detail) in [
             (NotificationEvent.opened, "PR opened", "“Work Work” when you open a PR, including drafts."),
+            (.issueOpened, "Issues opened in your repositories", "“Something need doing?” when anyone opens an issue in a repository you own."),
             (.merged, "PR merged", "“Job’s done” when your PR merges."),
             (.committed, "Commits by others on your PRs", "“Hmmm?” for other linked GitHub authors, including bots.")
         ] {
@@ -195,7 +196,7 @@ final class NotificationSettingsController: NSWindowController {
         repositoryCount.textColor = .secondaryLabelColor
         let repoHeading = NSStackView(views: [label("Ignored repositories", heading: true), NSView(), repositoryCount])
         add(repoHeading)
-        add(label("Skip all three events for exact owner/repository matches."))
+        add(label("Skip all events for exact owner/repository matches."))
         repositoryField.placeholderString = "owner/repository"
         repositoryField.setAccessibilityLabel("Repository to ignore, owner slash repository")
         repositoryField.setAccessibilityHelp("Enter an exact owner/repository. No URLs or wildcards. Press Return or Add.")

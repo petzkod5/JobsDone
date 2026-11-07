@@ -30,9 +30,9 @@ struct SoundPackTests {
         app.preferences.nativeNotifications = true
         for event in NotificationEvent.allCases {
             await app.post(event: event, repository: "o/r", id: event.rawValue, subtitle: "Fixture", body: "Fixture",
-                           url: "https://github.com/o/r/pull/1", opened: event == .opened, committed: event == .committed)
+                           url: "https://github.com/o/r/pull/1", issueOpened: event == .issueOpened, opened: event == .opened, committed: event == .committed)
         }
-        #expect(requests.count == 3)
+        #expect(requests.count == NotificationEvent.allCases.count)
         for (request, event) in zip(requests, NotificationEvent.allCases) {
             let sound = try #require(request.content.sound)
             let data = try NSKeyedArchiver.archivedData(withRootObject: sound, requiringSecureCoding: true)

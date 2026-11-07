@@ -2,10 +2,11 @@
   <img src="docs/banner.png" alt="Job’s Done — Work work. GitHub PR alerts for your Mac, with the Warcraft III Peon." width="800">
 </p>
 
-A tiny Mac menu bar app that makes Warcraft noises at your GitHub PRs.
+A tiny Mac menu bar app that makes Warcraft noises at your GitHub PRs and issues.
 
 Open one: **“Work work.”** Merge one: **“Job’s done!”**
 Someone else commits to it: **“Hmmm?”**
+An issue opens in a repository you own: **“Something need doing?”**
 
 ## Install
 
@@ -17,7 +18,8 @@ gh auth login --hostname github.com
 ```
 
 Open **Job’s Done** from Applications, allow notifications, and leave it running.
-It watches PRs you authored using your active GitHub CLI account.
+It watches PRs you authored and issues opened in repositories you own, using
+your active GitHub CLI account.
 
 [Help](SUPPORT.md) · [Settings and usage](docs/USAGE.md) · [Downloads](https://github.com/petzkod5/JobsDone/releases/latest) · [Contribute](CONTRIBUTING.md)
 

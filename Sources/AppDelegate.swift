@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var nativeSoundTypes = Set<String>()
     private var login = ""
     private var recent: [MergedPR] = []
+    private var recentIssues: [OpenedIssue] = []
     private var recentOpened: [OpenedPR] = []
     private var recentCommits: [CommitNotice] = []
     private let store: StateStore
@@ -36,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var checkRow: NSMenuItem?
     private var testRow: NSMenuItem?
     private var workTestRow: NSMenuItem?
+    private var issueTestRow: NSMenuItem?
     private var commitTestRow: NSMenuItem?
     private var soundRow: NSMenuItem?
     private var pollTask: Task<Void, Never>?
@@ -74,7 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.removeDeliveredNotifications(withIdentifiers: ["jobsdone-test", "jobsdone-test-current"])
         let action = UNNotificationAction(identifier: "OPEN_PR", title: "Open Pull Request", options: .foreground)
-        center.setNotificationCategories([UNNotificationCategory(identifier: "COMMIT_PR", actions: [action], intentIdentifiers: []), UNNotificationCategory(identifier: "MERGED_PR", actions: [action], intentIdentifiers: []), UNNotificationCategory(identifier: "OPENED_PR", actions: [action], intentIdentifiers: [])])
+        let issueAction = UNNotificationAction(identifier: "OPEN_ISSUE", title: "Open Issue", options: .foreground)
+        center.setNotificationCategories([UNNotificationCategory(identifier: "OPENED_ISSUE", actions: [issueAction], intentIdentifiers: []), UNNotificationCategory(identifier: "COMMIT_PR", actions: [action], intentIdentifiers: []), UNNotificationCategory(identifier: "MERGED_PR", actions: [action], intentIdentifiers: []), UNNotificationCategory(identifier: "OPENED_PR", actions: [action], intentIdentifiers: [])])
         center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
             Task { @MainActor in self?.updatePermission() }
         }
@@ -149,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Hmmm? + Notification" : "Test Commit Notification (Sound Off)")
     }
 
+    private var issueTestTitle: String {
+        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Something Need Doing? + Notification" : "Test Issue Notification (Sound Off)")
+    }
+
     private var soundTitle: String {
         systemSoundAllowed ? "Play Celebration Sound" : "Play Sound — Disabled by macOS"
     }
@@ -193,6 +200,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             workTestRow?.isEnabled = !busy && !testing
             commitTestRow?.title = commitTestTitle
             commitTestRow?.isEnabled = !busy && !testing
+            issueTestRow?.title = issueTestTitle
+            issueTestRow?.isEnabled = !busy && !testing
             soundRow?.title = soundTitle
             soundRow?.state = soundEnabled ? .on : .off
             return
@@ -205,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return entry
         }
         row("Job’s Done").isEnabled = false
-        row(login.isEmpty ? "Your authored GitHub PRs · every \(Int(preferences.pollingInterval)) seconds" : "@\(login) · authored PRs · every \(Int(preferences.pollingInterval)) seconds").isEnabled = false
+        row(login.isEmpty ? "Your GitHub PRs and owned-repository issues · every \(Int(preferences.pollingInterval)) seconds" : "@\(login) · PRs and owned-repository issues · every \(Int(preferences.pollingInterval)) seconds").isEnabled = false
         statusRow = row(status, #selector(showMonitorError))
         statusRow?.isEnabled = !busy && monitorError != nil
         statusRow?.toolTip = monitorError
@@ -221,9 +230,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         workTestRow?.isEnabled = !busy && !testing
         commitTestRow = row(commitTestTitle, #selector(testCommit))
         commitTestRow?.isEnabled = !busy && !testing
+        issueTestRow = row(issueTestTitle, #selector(testIssue))
+        issueTestRow?.isEnabled = !busy && !testing
         soundRow = row(soundTitle, #selector(toggleSound))
         soundRow?.state = soundEnabled ? .on : .off
-        soundRow?.toolTip = "One sound per event type per check, even when several PRs open or merge. macOS notification Sound settings also apply."
+        soundRow?.toolTip = "One sound per event type per check, even when several events arrive. macOS notification Sound settings also apply."
         let styles = NSMenu()
         styles.autoenablesItems = false
         for (title, tag) in [("Peon Toast (Real Portrait)", 1), ("macOS Notification", 0)] {
@@ -246,6 +257,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
             entry.representedObject = pr.url
             entry.toolTip = "\(title)\nOpened \(DateFormatter.localizedString(from: pr.createdAt, dateStyle: .medium, timeStyle: .short))"
+        }
+        menu.addItem(.separator())
+        row("Recent Issues").isEnabled = false
+        if recentIssues.isEmpty { row("New issues in repositories you own will appear here").isEnabled = false }
+        for issue in recentIssues {
+            let title = "\(issue.repository.nameWithOwner) #\(issue.number) · \(issue.title)"
+            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
+            entry.representedObject = issue.url
+            entry.toolTip = "\(title)\nOpened \(DateFormatter.localizedString(from: issue.createdAt, dateStyle: .medium, timeStyle: .short))"
         }
         menu.addItem(.separator())
         row("Recent Merges").isEnabled = false
@@ -373,7 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     @objc private func showMonitorError() { if let monitorError { alert("Monitoring needs attention", monitorError + "\n\nChecks retry every \(Int(preferences.pollingInterval)) seconds. Use Check Now after correcting the issue. Setup Help explains GitHub sign-in.") } }
     @objc private func showStartupError() { if let startupError { alert("Open at Login needs attention", startupError + "\n\nUse System Settings → General → Login Items to review Job’s Done.") } }
-    @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour PR events are saved in Recently Opened, Recent Merges, and Recent Commits by Others. They will not replay their sound because a banner failed.") } }
+    @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour GitHub events are saved in Recently Opened, Recent Merges, Recent Commits by Others, and Recent Issues. They will not replay their sound because a banner failed.") } }
     @objc private func showSoundWarning() {
         if let soundWarning { alert("Celebration sound needs attention", soundWarning) }
     }
@@ -472,9 +492,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return section
         }
         let setup = section("SIGN IN", "Install GitHub CLI, then run in Terminal:\ngh auth login --hostname github.com", command: "gh auth login --hostname github.com")
-        let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs. Set the GitHub polling interval in Settings. Checks catch up after sleep. Earlier PR events stay silent.")
-        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened, Recent Merges, or Recent Commits by Others.")
-        let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR links stay in the menu after a toast closes.")
+        let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs. “Something need doing?” when anyone opens an issue in a repository you own. Set the GitHub polling interval in Settings. Checks catch up after sleep. Earlier events stay silent.")
+        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened, Recent Merges, Recent Commits by Others, or Recent Issues.")
+        let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR and issue links stay in the menu after a toast closes.")
         let controls = NSStackView()
         controls.spacing = 12
         let menuButton = NSButton(title: "Open Peon Menu", target: self, action: #selector(showHelpMenu(_:)))
@@ -519,13 +539,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self.apply(await NotificationSettingsSnapshot.current())
             }, playSound: { await self.playSound(event: $0, repository: $1) }, post: {
                 await self.post(event: $0.event, repository: $0.repository, id: $0.id, subtitle: $0.subtitle,
-                                body: $0.body, url: $0.url, opened: $0.opened, committed: $0.committed)
+                                body: $0.body, url: $0.url, issueOpened: $0.issueOpened, opened: $0.opened, committed: $0.committed)
             })
             session.login = login
+            session.recentIssues = recentIssues
             session.recent = recent; session.recentOpened = recentOpened; session.recentCommits = recentCommits
             session.lastCheck = lastCheck
             await session.run()
             login = session.login
+            recentIssues = session.recentIssues
             recent = session.recent; recentOpened = session.recentOpened; recentCommits = session.recentCommits
             lastCheck = session.lastCheck; monitorError = session.monitorError
         }
@@ -557,27 +579,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    func post(event: NotificationEvent? = nil, repository: String = "", id: String, subtitle: String, body: String, url: String, opened: Bool = false, committed: Bool = false) async {
+    func post(event: NotificationEvent? = nil, repository: String = "", id: String, subtitle: String, body: String, url: String, issueOpened: Bool = false, opened: Bool = false, committed: Bool = false) async {
         guard !Task.isCancelled, notificationState.canPost else { return }
         if let event {
             guard !paused, preferences.allows(event, repository: repository) else { return }
         }
         if let output = configuration.output { output(id); return }
         let content = UNMutableNotificationContent()
-        content.title = committed ? "Hmmm?" : opened ? "Work Work! ⚒" : "Job’s done! ⚒"
+        content.title = issueOpened ? "Something need doing?" : committed ? "Hmmm?" : opened ? "Work Work! ⚒" : "Job’s done! ⚒"
         content.subtitle = subtitle
         content.body = body
-        content.categoryIdentifier = committed ? "COMMIT_PR" : opened ? "OPENED_PR" : "MERGED_PR"
+        content.categoryIdentifier = issueOpened ? "OPENED_ISSUE" : committed ? "COMMIT_PR" : opened ? "OPENED_PR" : "MERGED_PR"
         content.userInfo = ["url": url]
         if usesPeonToasts {
             content.interruptionLevel = .passive
             if notificationState == .ready {
                 let preview = ToastPreview(subtitle: subtitle, body: body, previewsEnabled: toastPreviewsEnabled)
-                peonToasts.show(id: id, title: content.title, subtitle: preview.subtitle, body: preview.body, duration: preferences.notificationDuration) { [weak self] in self?.open(url) }
+                peonToasts.show(id: id, title: content.title, subtitle: preview.subtitle, body: preview.body, duration: preferences.notificationDuration, issueOpened: issueOpened) { [weak self] in self?.open(url) }
             }
         }
-        if !usesPeonToasts && soundEnabled && systemSoundAllowed && nativeSoundTypes.insert(committed ? "committed" : opened ? "opened" : "merged").inserted {
-            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: preferences.soundPack.notificationSoundName(for: committed ? .committed : opened ? .opened : .merged)))
+        if !usesPeonToasts && soundEnabled && systemSoundAllowed && nativeSoundTypes.insert(issueOpened ? "issueOpened" : committed ? "committed" : opened ? "opened" : "merged").inserted {
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: preferences.soundPack.notificationSoundName(for: issueOpened ? .issueOpened : committed ? .committed : opened ? .opened : .merged)))
         }
         let portrait = try? NotificationPortrait.attachment()
         if let portrait { content.attachments = [portrait.0] }
@@ -595,7 +617,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func testCommit() { runTest(opened: false, committed: true) }
 
-    private func runTest(opened: Bool, committed: Bool = false) {
+    @objc private func testIssue() { runTest(opened: false, issueOpened: true) }
+
+    private func runTest(opened: Bool, committed: Bool = false, issueOpened: Bool = false) {
         guard !configuration.isolated else { return }
         guard !testing else { return }
         guard !busy else {
@@ -608,13 +632,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task {
             defer { testing = false; refreshMenu() }
             apply(await NotificationSettingsSnapshot.current())
-            await playSound(soundEvent: committed ? .committed : opened ? .opened : .merged)
+            await playSound(soundEvent: issueOpened ? .issueOpened : committed ? .committed : opened ? .opened : .merged)
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-            await post(id: "jobsdone-test-current", subtitle: committed ? "Sample commit by another author" : opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open your GitHub pull requests.", url: "https://github.com/pulls", opened: opened, committed: committed)
+            await post(id: "jobsdone-test-current", subtitle: issueOpened ? "Sample opened issue notification" : committed ? "Sample commit by another author" : opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open GitHub.", url: issueOpened ? "https://github.com/issues" : "https://github.com/pulls", issueOpened: issueOpened, opened: opened, committed: committed)
             if notificationState != .ready {
-                let history = committed ? "Recent Commits by Others" : opened ? "Recently Opened" : "Recent Merges"
+                let history = issueOpened ? "Recent Issues" : committed ? "Recent Commits by Others" : opened ? "Recently Opened" : "Recent Merges"
                 let focusNote = usesPeonToasts ? "" : " Focus may also suppress macOS banners."
-                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour PR events will still appear in \(history). Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications.\(focusNote)")
+                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour GitHub events will still appear in \(history). Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications.\(focusNote)")
             }
         }
     }

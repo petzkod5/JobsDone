@@ -14,10 +14,13 @@ private final class PollFixture {
     var session: PollingSession!
     var mergeFailure = false
     var openedFailure = false
+    var issueFailure = false
+    var includeIssues = false
     var commitFailure = false
     var boundary: ((String) -> Void)?
     var merge: MergedPR { MergedPR(id: "m", title: "Merge", url: "https://github.com/o/r/pull/1", number: 1, mergedAt: start, repository: .init(nameWithOwner: "o/r")) }
     var opened: OpenedPR { OpenedPR(id: "o", title: "Open", url: merge.url, number: 1, createdAt: start, repository: merge.repository) }
+    var issue: OpenedIssue { OpenedIssue(id: "i", title: "Something broken", url: "https://github.com/alice/r/issues/4", number: 4, createdAt: start, repository: .init(nameWithOwner: "alice/r")) }
     var pr: CommitPR { CommitPR(id: "c", title: "Commit", url: merge.url, number: 1, createdAt: start, headRefOid: "new", repository: merge.repository) }
     var commit: PRCommit { PRCommit(oid: "new", messageHeadline: "Change", committedDate: start.addingTimeInterval(1), author: .init(user: .init(login: "bob"))) }
     init() throws {
@@ -36,10 +39,16 @@ private final class PollFixture {
             self.boundary?("candidates"); return [self.pr] }, commits: { pr in
             expectEqual(pr, self.pr)
             self.boundary?("commits"); if self.commitFailure { throw MonitorError(message: "commits failed") }; return [self.commit]
+        }, issues: { login, since in
+            expectEqual(login, self.account)
+            expectEqual(since, self.account == "alice" ? self.start : self.start.addingTimeInterval(10))
+            self.boundary?("issues")
+            if self.issueFailure { throw MonitorError(message: "issues failed") }
+            return self.includeIssues ? [self.issue, self.issue] : []
         })
         session = PollingSession(github: github, store: StateStore(directory: directory), now: { self.start.addingTimeInterval(10) }, paused: { self.paused }, prepareDelivery: {}, playSound: { _, _ in self.boundary?("sound"); return false }, post: { [weak self] event in
             guard let self else { return }
-            await self.app.post(event: event.event, repository: event.repository, id: event.id, subtitle: event.subtitle, body: event.body, url: event.url, opened: event.opened, committed: event.committed)
+            await self.app.post(event: event.event, repository: event.repository, id: event.id, subtitle: event.subtitle, body: event.body, url: event.url, issueOpened: event.issueOpened, opened: event.opened, committed: event.committed)
         })
         var state = try StateStore(directory: directory).load(login: "alice", now: start)
         state.commits!.initialized = true
@@ -50,6 +59,67 @@ private final class PollFixture {
 }
 
 final class PollingTests {
+    @Test @MainActor func testIssueDeliveryHistoryDeduplicationAndAccountIsolation() async throws {
+        let f = try PollFixture(); defer { f.clean() }
+        f.includeIssues = true
+        var sounds: [NotificationEvent] = []
+        f.session.playSound = { event, repo in
+            if event == .issueOpened { sounds.append(event); expectEqual(repo, "alice/r") }
+            return true
+        }
+        await f.session.run()
+        expectEqual(f.output.filter { $0 == "issue-i" }, ["issue-i"])
+        expectEqual(sounds, [.issueOpened])
+        expectEqual(try f.state().issues!.recent, [f.issue])
+        await f.session.run()
+        expectEqual(f.output.filter { $0 == "issue-i" }.count, 1)
+        f.account = "bob"
+        await f.session.run()
+        expectEqual(f.session.recentIssues, [])
+        expectEqual(try f.state("bob").issues!.delivered, [])
+    }
+
+    @Test @MainActor func testIssueFailureRetriesWithoutBlockingPRs() async throws {
+        let f = try PollFixture(); defer { f.clean() }
+        f.includeIssues = true; f.issueFailure = true
+        await f.session.run()
+        expectEqual(try f.state().issues!.lastCheck, f.start)
+        expectEqual(f.output.count, 3)
+        #expect(f.session.monitorError?.contains("Issue alerts") == true)
+        f.issueFailure = false
+        await f.session.run()
+        expectEqual(f.output.count, 4)
+        expectEqual(try f.state().issues!.lastCheck, f.start.addingTimeInterval(10))
+    }
+
+    @Test @MainActor func testIssueFiltersRecordWithoutReplay() async throws {
+        for ignored in [true, false] {
+            let f = try PollFixture(); defer { f.clean() }
+            f.includeIssues = true
+            if ignored { f.app.preferences.addRepository("ALICE/R") }
+            else { f.app.preferences.setEnabled(false, for: .issueOpened) }
+            await f.session.run()
+            #expect(!f.output.contains("issue-i"))
+            expectEqual(try f.state().issues!.recent, [f.issue])
+            f.app.preferences.removeRepository("alice/r")
+            f.app.preferences.setEnabled(true, for: .issueOpened)
+            await f.session.run()
+            #expect(!f.output.contains("issue-i"))
+        }
+    }
+
+    @Test @MainActor func testPauseDuringIssueFetchPreservesPending() async throws {
+        let f = try PollFixture(); defer { f.clean() }
+        f.includeIssues = true
+        f.boundary = { if $0 == "issues" { f.paused = true } }
+        await f.session.run()
+        expectEqual(f.output, [])
+        expectEqual(try f.state().issues!.lastCheck, f.start)
+        f.paused = false; f.boundary = nil
+        await f.session.run()
+        #expect(f.output.contains("issue-i"))
+    }
+
     @Test @MainActor func testProductionPostHonorsNotificationReadiness() async throws {
         let f = try PollFixture(); defer { f.clean() }
         for state in [NotificationReadiness.checking, .notDetermined, .denied] {

@@ -1,7 +1,7 @@
 # Register a sound pack
 
 Add a folder at `Resources/SoundPacks/<id>/` with `opened.wav`, `merged.wav`,
-and `committed.wav`. Use a unique ID with lowercase ASCII letters, digits, and
+`committed.wav`, and `issueOpened.wav`. Use a unique ID with lowercase ASCII letters, digits, and
 hyphens. Keep the ID stable so saved selections continue to work.
 
 Add a `SoundPack` to `SoundPackRegistry.bundled` in `Sources/SoundPack.swift`.
