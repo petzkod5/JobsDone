@@ -30,7 +30,7 @@ New PRs include drafts; existing PRs stay quiet when monitoring first starts. Mi
 
 **Notification Style** defaults to **Peon Toast**, with the real Warcraft III portrait, an Open Pull Request button, and a dismiss button. Peon toasts may appear during Focus. Choose **macOS Notification** for system banners and system-scheduled Warcraft sounds that follow Focus.
 
-Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses the stack. Up to three appear at a time; an overflow count points to additional PR updates in the histories. They do not expire while VoiceOver or Switch Control is active. Help supports Command-C / Command-A for selected text and Command-W to close. For keyboard access to PRs, Command-Shift-M opens the Peon menu from Help; arrow keys and Return open the Recently Opened / Recent Merges links.
+Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses the stack. Up to three appear at a time; an overflow count points to additional PR updates in the histories. They do not expire while VoiceOver or Switch Control is active. Help supports Command-C / Command-A for selected text and Command-W to close. For keyboard access to PRs, Command-Shift-M opens the Peon menu from Help; arrow keys and Return open the Recently Opened / Recent Merges / Recent Commits by Others links.
 
 Peon mode saves a quiet copy in Notification Center without a second banner. macOS may show a generic app icon there; the real portrait is also attached as a thumbnail. Peon toasts respect notification permission, banner settings, and Show Previews: Never. PR links remain in the menu after a toast disappears.
 

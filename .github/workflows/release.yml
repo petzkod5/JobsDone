@@ -68,11 +68,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release-please.outputs.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
       - name: Test release source
+        working-directory: release-source
         run: bash scripts/test.sh
       - name: Build or verify existing archive and publish release
+        working-directory: release-source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag }}
@@ -83,7 +92,7 @@ jobs:
           MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: python3 scripts/release.py publish "$TAG"
+        run: python3 ../scripts/release.py publish "$TAG"
   tap:
     needs: [release-please, package]
     runs-on: macos-15
@@ -92,13 +101,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           ref: ${{ needs.release-please.outputs.sha }}
+          path: release-source
           fetch-depth: 0
           persist-credentials: false
       - name: Verify published archive and update tap
+        working-directory: release-source
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
           TAG: ${{ needs.release-please.outputs.tag }}
-        run: bash scripts/release-tap.sh "$TAG"
+        run: bash ../scripts/release-tap.sh "$TAG"
