@@ -29,6 +29,6 @@ for ARCH in arm64 x86_64; do
 done
 codesign --verify --deep --strict "$APP"
 if [[ "${MACOS_SIGNING_ENABLED:-false}" == true ]]; then
-  codesign -d -vv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application:'
+  codesign -d -vv "$APP" 2>&1 | grep 'Authority=Developer ID Application:' >/dev/null
   xcrun stapler validate "$APP"
 fi
