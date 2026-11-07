@@ -14,9 +14,9 @@ final class PeonToastPresenter {
     }
     private var entries: [Entry] = []
     private var overflowCount = 0
-    private let scheduleTimer: (TimeInterval, @escaping () -> Void) -> Timer
+    private let scheduleTimer: (TimeInterval, @escaping @Sendable () -> Void) -> Timer
 
-    init(scheduleTimer: @escaping (TimeInterval, @escaping () -> Void) -> Timer = { interval, action in
+    init(scheduleTimer: @escaping (TimeInterval, @escaping @Sendable () -> Void) -> Timer = { interval, action in
         let timer = Timer(timeInterval: interval, repeats: false) { _ in action() }
         RunLoop.main.add(timer, forMode: .common)
         return timer

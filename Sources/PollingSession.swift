@@ -1,11 +1,12 @@
 import Foundation
 
+@MainActor
 struct GitHubResponses {
-    var login: () async throws -> String
-    var merged: (String, Date) async throws -> [MergedPR]
-    var opened: (String, Date) async throws -> [OpenedPR]
-    var candidates: (String, Date?, Date) async throws -> [CommitPR]
-    var commits: (CommitPR) async throws -> [PRCommit]
+    var login: @MainActor () async throws -> String
+    var merged: @MainActor (String, Date) async throws -> [MergedPR]
+    var opened: @MainActor (String, Date) async throws -> [OpenedPR]
+    var candidates: @MainActor (String, Date?, Date) async throws -> [CommitPR]
+    var commits: @MainActor (CommitPR) async throws -> [PRCommit]
 
     static let live = GitHubResponses(
         login: { try await Task.detached { try GitHub.login() }.value },

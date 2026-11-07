@@ -37,7 +37,15 @@ The production build is at `dist/Job’s Done.app`. It shares the installed
 app's preferences and history. `scripts/install.sh` copies it to
 `~/Applications` and launches it; installation is not needed for tests.
 
-## Lint Swift and install the commit hook
+## Type check Swift
+
+Run `./scripts/typecheck.sh` before submitting Swift changes. It checks the
+app, regression tests, development variant, native harness, and Swift utilities
+without launching them. Swift 6 language mode and compiler warnings as errors
+also apply to normal app builds and tests. The `Typecheck` workflow runs it in the `Typecheck` job.
+See [the type-checking policy](docs/TYPECHECKING.md) for coverage and references.
+
+## Lint Swift and install Git hooks
 
 ```sh
 ./scripts/setup-hooks.sh
@@ -48,6 +56,9 @@ Setup downloads SwiftLint 0.65.1 into `.local/tools`, verifies its SHA-256,
 and sets this clone's `core.hooksPath` to `.githooks`. It refuses to overwrite
 another hook path. Run setup in each clone; no global installation is needed.
 Use `./scripts/setup-lint.sh` to install the tool without configuring hooks.
+The pre-push hook type checks each outgoing commit tip in a temporary snapshot,
+including branch and tag pushes. Uncommitted edits cannot hide errors in the
+pushed commit. Deleted refs are skipped; a failed check blocks the push.
 
 The pre-commit hook checks the complete index in a temporary directory. It
 checks staged contents even when a file also has unstaged edits, and changes
@@ -64,7 +75,8 @@ The `Lint` workflow runs one required `Lint` job on every PR and push,
 alongside the required `macos` and `Conventional commits` checks. Separate
 steps check all Swift files, shell scripts, and workflows, then run automation
 and lint failure tests. Local hooks can be skipped by Git; CI is the merge
-gate. Changes to the policy, runner, hooks, and workflows still need review.
+gate. Configure `Typecheck` as a required check alongside the existing checks.
+Changes to the policy, runner, hooks, and workflows still need review.
 
 ## Find your way around
 

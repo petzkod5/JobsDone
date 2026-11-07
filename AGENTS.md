@@ -31,7 +31,9 @@ Use a lowercase type from `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `t
 
 ## Validation
 
-Run `./scripts/test.sh` and `./scripts/build.sh` for app changes. For automation changes, validate the affected scripts and workflows and exercise their failure paths. Never claim a release or notification was tested when only a source review was performed.
+Run `./scripts/typecheck.sh`, `./scripts/test.sh`, and `./scripts/build.sh` for app changes.
+Keep Swift 6 language mode and warnings as errors enabled. Fix isolation and
+Sendable contracts rather than suppressing concurrency diagnostics. For automation changes, validate the affected scripts and workflows and exercise their failure paths. Never claim a release or notification was tested when only a source review was performed.
 
 Test the production path that owns the behavior. Do not reproduce that path in
 the test and then assert its result. Replace external services at their

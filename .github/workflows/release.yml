@@ -50,6 +50,7 @@ jobs:
           [[ $(jq -r '.head.repo.full_name' <<< "$DATA") == "$GITHUB_REPOSITORY" ]]
           BRANCH=$(jq -r '.head.ref' <<< "$DATA")
           # build dispatch must run on the PR branch so its status matches the PR SHA.
+          gh workflow run typecheck.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
           gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
           gh workflow run conventional-commits.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH" -f "pr=$PR"
       - name: Resolve existing immutable release source

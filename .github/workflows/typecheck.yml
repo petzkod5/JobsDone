@@ -1,0 +1,15 @@
+name: Typecheck
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Type check all Swift entry points
+        run: ./scripts/typecheck.sh
