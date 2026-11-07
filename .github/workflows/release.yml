@@ -1,0 +1,102 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      retry_tag:
+        description: 'Existing vX.Y.Z release to retry (empty runs release-please)'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: jobsdone-release
+  cancel-in-progress: false
+jobs:
+  release-please:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: googleapis/release-please-action@v4
+        id: release
+        if: inputs.retry_tag == ''
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Dispatch checks for release PR at its current head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          PR=$(jq -r '.number // empty' <<< "${RELEASE_PR:-null}")
+          if [[ -z "$PR" ]]; then exit 0; fi
+          [[ "$PR" =~ ^[0-9]+$ ]]
+          DATA=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR")
+          [[ $(jq -r '.base.ref' <<< "$DATA") == main ]]
+          [[ $(jq -r '.head.repo.full_name' <<< "$DATA") == "$GITHUB_REPOSITORY" ]]
+          BRANCH=$(jq -r '.head.ref' <<< "$DATA")
+          # build dispatch must run on the PR branch so its status matches the PR SHA.
+          gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          gh workflow run conventional-commits.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr=$PR"
+      - name: Resolve existing immutable release source
+        id: resolve
+        if: steps.release.outputs.release_created == 'true' || inputs.retry_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.retry_tag || steps.release.outputs.tag_name }}
+        run: python3 scripts/release.py resolve "$TAG"
+  package:
+    needs: release-please
+    if: needs.release-please.outputs.tag != ''
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          fetch-depth: 0
+      - name: Build or verify existing archive and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: python3 scripts/release.py publish "$TAG"
+  tap:
+    needs: [release-please, package]
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify published archive and update tap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: bash scripts/release-tap.sh "$TAG"

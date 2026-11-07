@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "be68e0178d2a832eadd742077aa9d71eabdada04",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "draft": true,
+  "force-tag-creation": true,
+  "packages": {".": {"package-name": "jobsdone"}}
+}
