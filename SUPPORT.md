@@ -22,9 +22,38 @@ Check **System Settings → Notifications → Job’s Done**, your output volume
 Focus. **Peon Toast** can appear during Focus; **macOS Notification** follows
 system scheduling. Choose the style in **Settings…**.
 
-## Install or update trouble
+## Install, update, or uninstall
 
-Quit the app before updating, then follow [the install instructions](README.md#install).
+For Homebrew installation, see [the README](README.md#install).
+
+For a ZIP install, download `JobsDone-<version>-universal.zip` from
+[Releases](https://github.com/petzkod5/JobsDone/releases/latest), unzip it, and
+move **Job’s Done.app** to Applications. Install GitHub CLI with
+[Homebrew](https://brew.sh) and sign in:
+
+```sh
+brew install gh
+gh auth login --hostname github.com
+```
+
+Open **Job’s Done** from Applications and allow notifications. Published
+releases are Developer ID signed and notarized. Each ZIP has a separate
+`.sha256` checksum download.
+
+Quit the app before updating. For Homebrew:
+
+```sh
+brew update
+brew upgrade --cask petzkod5/tap/jobsdone
+```
+
+For ZIP installs, replace the app with the latest download.
+
+To uninstall, quit the app and run `brew uninstall --cask jobsdone`, or move a
+ZIP-installed copy to Trash. Saved history and preferences remain on your Mac.
+
+## Install trouble
+
 If macOS rejects an official release, include the exact message in a bug report.
 Do not disable Gatekeeper or remove quarantine. Locally built apps are ad-hoc
 signed and differ from published releases.
