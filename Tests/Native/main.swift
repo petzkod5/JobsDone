@@ -33,6 +33,10 @@ MainActor.assumeIsolated {
         let event = buttons.first { $0.identifier?.rawValue == "opened" }!
         event.performClick(nil)
         require(!NotificationPreferences(defaults: config.defaults).isEnabled(.opened), "real event action saved and read back")
+        let issueToggle = buttons.first { $0.identifier?.rawValue == "issueOpened" }!
+        issueToggle.performClick(nil)
+        require(!delegate.preferences.isEnabled(.issueOpened), "issue toggle saves preference")
+        issueToggle.performClick(nil)
         let sound = buttons.first { $0.title == "Play celebration sounds" }!
         sound.performClick(nil)
         require(!delegate.preferences.soundEnabled, "real sound action saved")
@@ -77,6 +81,17 @@ MainActor.assumeIsolated {
         await delegate.post(event: .merged, repository: "owner/repo", id: "real-duration", subtitle: "Event timing", body: "Fixture", url: "https://github.com/owner/repo/pull/1")
         require(!scheduled.isEmpty && scheduled.allSatisfy { $0 == 30 }, "new event toast reads changed duration")
         require(posted.last == "real-duration", "event reached notification boundary")
+        presenter.dismissAll()
+        await delegate.post(event: .issueOpened, repository: "owner/repo", id: "issue-native", subtitle: "Issue opened · owner/repo #4", body: "Something need doing?", url: "https://github.com/owner/repo/issues/4", issueOpened: true)
+        let issueWindow = app.windows.first { $0.title == "Job’s Done — Issue opened · owner/repo #4" && $0.isVisible }!
+        require(views(issueWindow.contentView!).compactMap { $0 as? NSButton }.contains { $0.title == "Open Issue" }, "issue toast offers Open Issue")
+        let issueBitmap = issueWindow.contentView!.bitmapImageRepForCachingDisplay(in: issueWindow.contentView!.bounds)!
+        issueWindow.contentView!.displayIgnoringOpacity(issueWindow.contentView!.bounds, in: NSGraphicsContext(bitmapImageRep: issueBitmap)!)
+        do {
+            try issueBitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("issue-toast-view.png"))
+        } catch {
+            fputs("FAIL: issue capture write: \(error)\n", stderr); exit(1)
+        }
         presenter.dismissAll()
         delegate.preferences.notificationDuration = 15
         delegate.showSettings()

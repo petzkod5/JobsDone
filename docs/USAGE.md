@@ -1,9 +1,10 @@
 # Using Job’s Done
 
-## PR alerts and history
+## PR and issue alerts
 
 JobsDone checks PRs authored by your active `github.com` account while your Mac
-is awake. In **Settings…**, choose **GitHub polling interval** from 30 seconds
+is awake. It also watches issues opened by anyone in repositories owned by
+that account; organization and collaborator repositories are excluded. In **Settings…**, choose **GitHub polling interval** from 30 seconds
 to 15 minutes (default: 60 seconds). Changes apply immediately. GitHub CLI handles sign-in; there is no token to paste
 into the app.
 
@@ -17,11 +18,15 @@ linked author stay quiet. PRs changed and closed between checks are included.
 Existing open PRs are silently baselined when upgrading to commit alerts.
 Saved commit IDs prevent repeats across restart and force-push.
 
+New issues play “Something need doing?” and appear under **Recent Issues**.
+Existing issues stay silent on first launch or upgrade. Issues closed between
+checks are included. Saved issue IDs prevent repeat alerts after restart.
+
 ## Choose a notification style
 
 Open **Settings…** or use the Peon menu:
 
-- **Peon Toast** (default): app-owned toast with an Open Pull Request button.
+- **Peon Toast** (default): app-owned toast with an Open Pull Request or Open Issue button.
   It may appear during Focus and saves a quiet copy in Notification Center.
 - **macOS Notification**: system banners and scheduled sounds that follow Focus.
 
@@ -39,7 +44,7 @@ histories. Toasts do not expire while VoiceOver or Switch Control is active.
 
 Open **Settings…** with **Command-comma**. Changes save immediately and apply
 to all GitHub accounts on this Mac. Choose alerts for opened PRs, merged PRs,
-and commits by others.
+commits by others, and issues opened in your repositories.
 
 To ignore a repository, enter its exact **owner/repository** and press Return.
 Names are case-insensitive. URLs and wildcards are not accepted. Use Remove
@@ -55,6 +60,6 @@ apply. Pause and **Open at Login** are in the Peon menu.
 In Help, **Command-C** copies selected text, **Command-A** selects all, and
 **Command-W** closes the window. **Command-Shift-M** opens the Peon menu from
 Help. Use arrow keys and Return to open links under **Recently Opened**,
-**Recent Merges**, or **Recent Commits by Others**.
+**Recent Merges**, **Recent Commits by Others**, or **Recent Issues**.
 
 For sign-in or notification problems, see [Help](../SUPPORT.md).
