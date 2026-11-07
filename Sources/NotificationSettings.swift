@@ -102,7 +102,7 @@ final class NotificationSettingsController: NSWindowController {
         }
         add(header)
         stack.setCustomSpacing(24, after: stack.arrangedSubviews.last!)
-        add(label("Your authored PRs", heading: true))
+        add(label("Notify me about", heading: true))
         var eventRows: [NSView] = []
         for (event, title, detail) in [
             (NotificationEvent.opened, "PR opened", "“Work Work” when you open a PR, including drafts."),
