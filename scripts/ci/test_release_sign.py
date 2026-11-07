@@ -20,7 +20,7 @@ APP = Path('/tmp/requested app with spaces.app')
 
 
 class ReleaseSigningTests(unittest.TestCase):
-    def exercise(self, failure=None, valid_identity=True):
+    def exercise(self, failure=None, valid_identity=True, wrapped=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             commands = root / 'bin'
@@ -34,7 +34,7 @@ class ReleaseSigningTests(unittest.TestCase):
             env = {
                 'PATH': str(commands), 'SIGN_TEST_LOG': str(log),
                 'SIGN_TEST_FAILURE': failure or '', 'SIGN_TEST_INVALID': '' if valid_identity else '1',
-                'MACOS_CERTIFICATE_BASE64': base64.b64encode(b'certificate fixture').decode(),
+                'MACOS_CERTIFICATE_BASE64': ('  \n' if wrapped else '') + base64.b64encode(b'certificate fixture').decode() + ('\n\t' if wrapped else ''),
                 'MACOS_CERTIFICATE_PASSWORD': 'fixture-password', 'MACOS_SIGNING_IDENTITY': IDENTITY,
             }
             labels = {
@@ -45,9 +45,9 @@ class ReleaseSigningTests(unittest.TestCase):
                 'sign': 'Sign app', 'verify': 'Verify signed app', 'restore': 'Restore keychain search list',
                 'delete-keychain': 'Delete signing keychain', 'read': 'Read keychain search list',
             }
-            with patch.dict(os.environ, env), patch.object(release_sign, 'urlopen', return_value=io.BytesIO(b'intermediate fixture')) as download:
+            with patch.dict(os.environ, env):
                 if failure:
-                    expected = labels[failure] + ' failed (exit 37)'
+                    expected = labels[failure] + ' failed (exit 37): *** private fixture diagnostic'
                 elif not valid_identity:
                     expected = 'Configured signing identity is not valid in the temporary keychain'
                 else:
@@ -56,11 +56,10 @@ class ReleaseSigningTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, '^' + re.escape(expected) + '$') as error:
                         release_sign.sign(APP)
                     self.assertNotIn('fixture-password', str(error.exception))
-                    self.assertNotIn('private fixture diagnostic', str(error.exception))
+                    if failure:
+                        self.assertIn('private fixture diagnostic', str(error.exception))
                 else:
                     release_sign.sign(APP)
-                if failure != 'read':
-                    download.assert_called_once_with(release_sign.INTERMEDIATE_URL, timeout=30)
             records = [json.loads(line) for line in log.read_text().splitlines()]
         return records
 
@@ -88,7 +87,7 @@ class ReleaseSigningTests(unittest.TestCase):
             ['security', 'list-keychains', '-d', 'user', '-s', *ORIGINAL],
             ['security', 'delete-keychain', keychain],
         ])
-        self.assertEqual(base64.b64decode(records[5]['data']), b'intermediate fixture')
+        self.assertEqual(base64.b64decode(records[5]['data']), release_sign.INTERMEDIATE.read_bytes())
         self.assertEqual(base64.b64decode(records[6]['data']), b'certificate fixture')
         self.assertEqual(records[6]['mode'], 0o600)
         self.assertFalse(directory.exists(), 'Temporary credential files must be removed')
@@ -120,11 +119,39 @@ class ReleaseSigningTests(unittest.TestCase):
         self.assertEqual(calls[-2], ['security', 'list-keychains', '-d', 'user', '-s', *ORIGINAL])
         self.assertEqual(calls[-1], ['security', 'delete-keychain', calls[1][-1]])
 
+    def test_wrapped_certificate_secret(self):
+        self.exercise(wrapped=True)
+
+    def test_empty_identity_fails_before_keychain_access(self):
+        with patch.dict(os.environ, {'MACOS_CERTIFICATE_BASE64': 'YQ==',
+                                    'MACOS_CERTIFICATE_PASSWORD': 'secret',
+                                    'MACOS_SIGNING_IDENTITY': '  '}), patch.object(release_sign, 'run') as command:
+            with self.assertRaisesRegex(RuntimeError, 'must not be empty'):
+                release_sign.sign(APP)
+            command.assert_not_called()
+
+    def test_cleanup_errors_preserve_primary_failure(self):
+        for failing_cleanup in ('Restore keychain search list', 'Delete signing keychain'):
+            calls = []
+            def command(label, *args, **kwargs):
+                calls.append(label)
+                if label in ('Sign app', failing_cleanup):
+                    raise RuntimeError(label + ' fixture failure')
+                return IDENTITY if label == 'Validate signing identity' else ''
+            with self.subTest(cleanup=failing_cleanup), patch.dict(os.environ, {
+                'MACOS_CERTIFICATE_BASE64': 'YQ==', 'MACOS_CERTIFICATE_PASSWORD': 'secret',
+                'MACOS_SIGNING_IDENTITY': IDENTITY,
+            }), patch.object(release_sign, 'run', side_effect=command), patch('sys.stderr', new_callable=io.StringIO) as stderr:
+                with self.assertRaisesRegex(RuntimeError, '^Sign app fixture failure$'):
+                    release_sign.sign(APP)
+                self.assertIn(failing_cleanup + ' fixture failure', stderr.getvalue())
+                self.assertEqual(calls[-2:], ['Restore keychain search list', 'Delete signing keychain'])
+
     def test_failed_command_does_not_expose_secret_arguments(self):
         """Detect inclusion of subprocess secrets in public failure messages."""
         with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'secret-password')):
-            with self.assertRaisesRegex(RuntimeError, '^Import identity failed \\(exit 1\\)$') as error:
-                release_sign.run('Import identity', 'security', 'import', '-P', 'secret-password')
+            with self.assertRaisesRegex(RuntimeError, r'^Import identity failed \(exit 1\): \*\*\*$') as error:
+                release_sign.run('Import identity', 'security', 'import', '-P', 'secret-password', sensitive=('secret-password',))
             self.assertNotIn('secret-password', str(error.exception))
 
 
