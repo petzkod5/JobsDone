@@ -16,6 +16,7 @@ class SoundPackPackagingTests(unittest.TestCase):
                 source.mkdir(parents=True)
                 for event in ["opened", "merged", "committed", "issueOpened"]:
                     (source / f"{event}.wav").write_bytes(f"{pack}:{event}".encode())
+            (root / "Resources" / "SoundPacks" / "README.md").write_text("Pack documentation")
             destination = root / "output"
             subprocess.run(["bash", str(SCRIPT), str(destination)], cwd=root, check=True)
             for pack in ["peon", "second"]:

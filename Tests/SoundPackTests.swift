@@ -33,12 +33,13 @@ struct SoundPackTests {
                            url: "https://github.com/o/r/pull/1", issueOpened: event == .issueOpened, opened: event == .opened, committed: event == .committed)
         }
         #expect(requests.count == NotificationEvent.allCases.count)
-        for (request, event) in zip(requests, NotificationEvent.allCases) {
+        let nativeNames = ["other-opened.wav", "other-merged.wav", "other-committed.wav", "other-issueOpened.wav"]
+        for (request, name) in zip(requests, nativeNames) {
             let sound = try #require(request.content.sound)
             let data = try NSKeyedArchiver.archivedData(withRootObject: sound, requiringSecureCoding: true)
             let archive = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
             let objects = archive?["$objects"] as? [Any] ?? []
-            #expect(objects.compactMap { $0 as? String }.contains(other.notificationSoundName(for: event)))
+            #expect(objects.compactMap { $0 as? String }.contains(name))
         }
         app.preferences.soundEnabled = false
         let mutedApp = AppDelegate(configuration: config)
