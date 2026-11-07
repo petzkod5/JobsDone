@@ -2,6 +2,7 @@ import AppKit
 
 let fm = FileManager.default
 let output = CommandLine.arguments.dropFirst().first ?? "docs"
+let prototypes = CommandLine.arguments.contains("--all")
 try fm.createDirectory(atPath: output, withIntermediateDirectories: true)
 let portrait = NSImage(contentsOfFile: "Resources/Peon.gif")!
 func color(_ hex: UInt32) -> NSColor {
@@ -19,7 +20,7 @@ func peon(_ x: CGFloat, _ y: CGFloat, _ side: CGFloat) {
     NSGraphicsContext.current?.imageInterpolation = .none
     portrait.draw(in:NSRect(x:x,y:y,width:side,height:side),from:.zero,operation:.sourceOver,fraction:1)
 }
-for option in 1...6 {
+for option in (prototypes ? Array(1...6) : [1]) {
     let image = NSImage(size:NSSize(width:1600,height:480))
     image.lockFocus()
     switch option {
@@ -72,5 +73,5 @@ for option in 1...6 {
     }
     image.unlockFocus()
     let bitmap = NSBitmapImageRep(data:image.tiffRepresentation!)!
-    try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"\(output)/banner-\(option).png"))
+    try bitmap.representation(using:.png,properties:[:])!.write(to:URL(fileURLWithPath:"\(output)/" + (prototypes ? "banner-\(option).png" : "banner.png")))
 }

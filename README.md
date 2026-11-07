@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Job’s Done — Work work. Ship it. A Warcraft III Peon watches your pull requests." width="800">
+  <img src="docs/banner.png" alt="Job’s Done — Work work. GitHub PR alerts for your Mac, with the Warcraft III Peon." width="800">
 </p>
 
 <p align="center">A tiny macOS menu bar app for your GitHub PRs.<br>Open one: <b>“Work work.”</b> Merge one: <b>“Job’s done!”</b></p>
