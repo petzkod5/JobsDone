@@ -28,3 +28,12 @@ enum MenuCopy {
         value.count > limit ? String(value.prefix(max(0, limit - 1))) + "…" : value
     }
 }
+
+struct ToastPreview {
+    let subtitle: String
+    let body: String
+    init(subtitle: String, body: String, previewsEnabled: Bool) {
+        self.subtitle = previewsEnabled ? subtitle : "Pull request update"
+        self.body = previewsEnabled ? body : "A pull request update is ready."
+    }
+}
