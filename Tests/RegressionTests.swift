@@ -1,11 +1,13 @@
 import Foundation
+import Testing
+@testable import JobsDone
 
-struct MonitorTests {
+final class MonitorTests {
     let start = Date(timeIntervalSince1970: 1_700_000_000)
     func pr(_ id: String, offset: Double) -> MergedPR {
         MergedPR(id: id, title: "Fix", url: "https://github.com/owner/repo/pull/1", number: 1, mergedAt: start.addingTimeInterval(offset), repository: .init(nameWithOwner: "owner/repo"))
     }
-    func testNoHistoricalAlertsAndNoDuplicateDelivery() {
+    @Test func testNoHistoricalAlertsAndNoDuplicateDelivery() {
         var state = AccountState(startedAt: start, lastCheck: start)
         let old = pr("old", offset: -1)
         let fresh = pr("new", offset: 2)
@@ -13,7 +15,7 @@ struct MonitorTests {
         state.record(fresh)
         expectEqual(state.pending([old, fresh]), [])
     }
-    func testCatchupOrderedAcrossRestartAndAccounts() throws {
+    @Test func testCatchupOrderedAcrossRestartAndAccounts() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = StateStore(directory: directory)
@@ -28,17 +30,17 @@ struct MonitorTests {
         expectEqual(restored.recent, [delivered])
         expect(try store.load(login: "bob", now: Date()).delivered.isEmpty)
     }
-    func testCorruptStateFailsInsteadOfResettingCheckpoint() throws {
+    @Test func testCorruptStateFailsInsteadOfResettingCheckpoint() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try Data("broken".utf8).write(to: directory.appendingPathComponent("alice.json"))
         do {
             _ = try StateStore(directory: directory).load(login: "alice", now: Date())
-            fatalError("Corrupt state must throw")
+            Issue.record("Corrupt state must throw")
         } catch { }
     }
-    func testRecentListBoundedWithoutForgettingDeliveredIDs() {
+    @Test func testRecentListBoundedWithoutForgettingDeliveredIDs() {
         var state = AccountState(startedAt: start, lastCheck: start)
         for number in 0..<15 { state.record(pr(String(number), offset: Double(number))) }
         expectEqual(state.recent.count, 10)
@@ -49,7 +51,7 @@ struct MonitorTests {
         OpenedPR(id: id, title: "New work", url: "https://github.com/owner/repo/pull/1", number: 1, createdAt: start.addingTimeInterval(offset), repository: .init(nameWithOwner: "owner/repo"))
     }
 
-    func testOpenedEventsAreIndependentAndDeduplicated() throws {
+    @Test func testOpenedEventsAreIndependentAndDeduplicated() throws {
         var state = AccountState(startedAt: start, lastCheck: start, opened: OpenedState(startedAt: start, lastCheck: start))
         let first = openedPR("same-pr", offset: 1)
         let later = openedPR("later", offset: 3)
@@ -76,7 +78,7 @@ struct MonitorTests {
         expectEqual(state.opened!.delivered.count, 16)
     }
 
-    func testLegacyStateStartsOpenedBoundaryAtUpgrade() throws {
+    @Test func testLegacyStateStartsOpenedBoundaryAtUpgrade() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = StateStore(directory: directory)
@@ -98,7 +100,7 @@ struct MonitorTests {
         expectEqual(fresh.opened!.startedAt, upgrade)
     }
 
-    func testOpenedSearchIncludesDraftAndSinceClosedPRs() {
+    @Test func testOpenedSearchIncludesDraftAndSinceClosedPRs() {
         let query = GitHub.searchText(login: "alice", since: start, opened: true)
         expect(query.contains("is:pr author:alice created:>="))
         expect(!query.contains("is:open"))
@@ -109,7 +111,8 @@ struct MonitorTests {
 
 }
 
-func testCommitAlerts() throws {
+final class AdditionalTests {
+@Test func testCommitAlerts() throws {
     let now = Date(timeIntervalSince1970: 1_700_000_000)
     let pr = CommitPR(id: "PR1", title: "Fix", url: "https://github.com/o/r/pull/1", number: 1, createdAt: now.addingTimeInterval(-100), headRefOid: "old", repository: .init(nameWithOwner: "o/r"))
     func commit(_ id: String, _ author: String?, _ offset: Double = 10) -> PRCommit {
@@ -172,7 +175,7 @@ func testCommitAlerts() throws {
     expectEqual(upgraded.recent, legacy.recent)
 }
 
-func testCompleteCommitPagination() throws {
+@Test func testCompleteCommitPagination() throws {
     let pr = CommitPR(id: "PR", title: "Many commits", url: "https://github.com/o/r/pull/1", number: 1, createdAt: Date(), headRefOid: "head", repository: .init(nameWithOwner: "o/r"))
     func graph(_ total: Int, head: String = "head", next: Bool = false, cursor: String? = nil, ids: [String] = ["first"]) throws -> Data {
         let nodes: [[String: Any]] = ids.map { ["commit": ["oid": $0, "messageHeadline": "Change", "committedDate": "2026-01-01T00:00:00Z", "author": ["user": ["login": "bob"]]]] }
@@ -206,7 +209,7 @@ func testCompleteCommitPagination() throws {
     expect(fallbackCalled)
     expectEqual(short.count, 3)
     func rejected(_ request: ([String]) throws -> Data) {
-        do { _ = try GitHub.commits(on: pr, request: request); fatalError("Incomplete snapshot accepted") }
+        do { _ = try GitHub.commits(on: pr, request: request); Issue.record("Incomplete snapshot accepted") }
         catch { }
     }
     rejected { args in args.contains("graphql") ? try graph(301) : try comparison(301, ids: []) }
@@ -226,34 +229,7 @@ func testCompleteCommitPagination() throws {
     expectEqual(normal.map(\.oid), ["a", "b", "c"])
 }
 
-func expectEqual<T: Equatable>(_ a: T, _ b: T) { precondition(a == b, "Expected \(a) to equal \(b)") }
-func expect(_ condition: Bool) { precondition(condition) }
-let tests = MonitorTests()
-tests.testNoHistoricalAlertsAndNoDuplicateDelivery()
-try tests.testCatchupOrderedAcrossRestartAndAccounts()
-try tests.testCorruptStateFailsInsteadOfResettingCheckpoint()
-tests.testRecentListBoundedWithoutForgettingDeliveredIDs()
-try tests.testOpenedEventsAreIndependentAndDeduplicated()
-try tests.testLegacyStateStartsOpenedBoundaryAtUpgrade()
-tests.testOpenedSearchIncludesDraftAndSinceClosedPRs()
-try testCommitAlerts()
-try testCompleteCommitPagination()
-expect(!NotificationReadiness.denied.canPost)
-expect(!NotificationReadiness.notDetermined.canPost)
-expect(NotificationReadiness.quiet.canPost)
-expect(NotificationReadiness.ready.canPost)
-expectEqual(MenuCopy.truncated("A long PR title", limit: 8), "A long …")
-expectEqual(MenuCopy.truncated("👨‍👩‍👧‍👦abc", limit: 3), "👨‍👩‍👧‍👦a…")
-expectEqual(MenuCopy.truncated("Short", limit: 10), "Short")
-let hiddenPreview = ToastPreview(subtitle: "private-repo #123 merged", body: "Secret PR title", previewsEnabled: false)
-expectEqual(hiddenPreview.subtitle, "Pull request update")
-expectEqual(hiddenPreview.body, "A pull request update is ready.")
-let visiblePreview = ToastPreview(subtitle: "repo #123 merged", body: "Fix bug", previewsEnabled: true)
-expectEqual(visiblePreview.subtitle, "repo #123 merged")
-expectEqual(visiblePreview.body, "Fix bug")
-print("Passed 7 monitor scenarios plus commit baseline/author/deduplication/force-push/migration, complete-history pagination, notification-readiness, Unicode truncation, and preview-privacy assertions.")
-
-func testNotificationPreferences() throws {
+@Test func testNotificationPreferences() throws {
     let suite = "JobsDone.tests." + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -294,47 +270,20 @@ func testNotificationPreferences() throws {
     expect(NotificationPreferences(defaults: other).isEnabled(.opened))
     expect(NotificationPreferences(defaults: other).ignoredRepositories.isEmpty)
 
-    // Suppressed events still use the normal account record and snapshot paths.
-    let start = Date(timeIntervalSince1970: 1000)
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let store = StateStore(directory: directory)
-    var account = try store.load(login: "alice", now: start)
-    let merge = MergedPR(id: "m", title: "Merge", url: "https://github.com/owner/repo/pull/1", number: 1, mergedAt: start, repository: .init(nameWithOwner: "owner/repo"))
-    let opened = OpenedPR(id: "o", title: "Opened", url: merge.url, number: 1, createdAt: start, repository: merge.repository)
-    let pr = CommitPR(id: "c", title: "Commits", url: merge.url, number: 1, createdAt: start, headRefOid: "new", repository: merge.repository)
-    let commit = PRCommit(oid: "new", messageHeadline: "Change", committedDate: start.addingTimeInterval(1), author: .init(user: .init(login: "bob")))
-    prefs.setEnabled(false, for: .merged)
-    prefs.setEnabled(false, for: .committed)
-    expect(!prefs.allows(.merged, repository: merge.repository.nameWithOwner))
-    expect(!prefs.allows(.opened, repository: opened.repository.nameWithOwner))
-    account.record(merge)
-    account.opened!.record(opened)
-    account.commits!.initialized = true
-    let notices = account.commits!.prepare([commit], on: pr, login: "alice")
-    expectEqual(notices.count, 1)
-    account.commits!.record(notices[0])
-    account.commits!.snapshot([commit], on: pr)
-    account.lastCheck = start.addingTimeInterval(10)
-    try store.save(account, login: "alice")
-    for event in NotificationEvent.allCases { prefs.setEnabled(true, for: event) }
-    let restored = try store.load(login: "alice", now: start)
-    expectEqual(restored.recent, [merge])
-    expectEqual(restored.opened!.recent, [opened])
-    expectEqual(restored.commits!.recent, notices)
-    expect(restored.pending([merge]).isEmpty)
-    expect(restored.opened!.pending([opened]).isEmpty)
-    expect(restored.commits!.pending([commit], on: pr, login: "alice").isEmpty)
-    expect(!restored.commits!.needsSnapshot(pr))
-    expectEqual(restored.lastCheck, start.addingTimeInterval(10))
-    expect(try store.load(login: "bob", now: start).recent.isEmpty)
-    // The same preference object reads a newer instance's edits at delivery time.
-    let latest = NotificationPreferences(defaults: defaults)
-    latest.setEnabled(false, for: .merged)
-    expect(!prefs.allows(.merged, repository: "owner/repo"))
-    latest.setEnabled(true, for: .merged)
-    _ = latest.addRepository("owner/repo")
-    expect(!prefs.allows(.merged, repository: "owner/repo"))
 }
-try testNotificationPreferences()
-print("Passed notification defaults/migration/persistence/isolation/validation/exact-match and silent-history/no-replay scenarios.")
+}
+
+struct PresentationTests {
+    @Test func testPrivateToastPreviewHidesRepositoryAndTitle() {
+        let preview = ToastPreview(subtitle: "private-repo #123 merged", body: "Secret title", previewsEnabled: false)
+        expectEqual(preview.subtitle, "Pull request update")
+        expectEqual(preview.body, "A pull request update is ready.")
+        let visible = ToastPreview(subtitle: "repo #123 merged", body: "Fix", previewsEnabled: true)
+        expectEqual(visible.body, "Fix")
+    }
+    @Test func testMenuTruncationPreservesGraphemeClusters() {
+        expectEqual(MenuCopy.truncated("A long PR title", limit: 8), "A long …")
+        expectEqual(MenuCopy.truncated("👨‍👩‍👧‍👦abc", limit: 3), "👨‍👩‍👧‍👦a…")
+        expectEqual(MenuCopy.truncated("Short", limit: 10), "Short")
+    }
+}

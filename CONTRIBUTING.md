@@ -7,7 +7,8 @@ so we can agree on the behavior before you build it.
 ## Build locally
 
 You need macOS, Swift 6 or later, and Xcode Command Line Tools. The app targets
-macOS 13+. Install [GitHub CLI](https://cli.github.com/) through Homebrew if you
+macOS 13+; use macOS 14+ for the Swift Testing runtime. Install
+[GitHub CLI](https://cli.github.com/) through Homebrew if you
 want to try PR monitoring.
 
 Fork the repo, then clone your fork:
@@ -20,26 +21,32 @@ git switch -c fix/your-change
 ./scripts/build.sh
 ```
 
-The built app is at `dist/Job’s Done.app`. Quit any installed copy before
-opening it. Local builds share the installed app’s preferences and saved PR
-history; use a separate macOS user account if you need clean test data.
-`scripts/install.sh` copies to `~/Applications` and launches the app, so it is
-not needed for building or testing.
-
-To launch the built app after quitting any installed copy:
+Use the isolated development app to try the settings without changing your
+installed app's preferences or history:
 
 ```sh
-open "dist/Job’s Done.app"
+./scripts/build-dev.sh
+open ".local/unit-a/dev/JobsDone Dev.app"
 ```
+
+This app has a separate identity and does not monitor GitHub, request
+notification permission, or register a login item. Use `./scripts/test-native.sh`
+in a logged-in macOS graphical session to check native control actions.
+
+The production build is at `dist/Job’s Done.app`. It shares the installed
+app's preferences and history. `scripts/install.sh` copies it to
+`~/Applications` and launches it; installation is not needed for tests.
 
 ## Find your way around
 
 - `Sources/Monitor.swift`: GitHub queries, event detection, account state.
-- `Sources/main.swift`: menu, notifications, app lifecycle.
+- `Sources/main.swift` and `AppConfiguration.swift`: launch and test isolation.
+- `Sources/AppDelegate.swift`: menu, notifications, app lifecycle.
+- `Sources/PollingSession.swift`: polling, delivery sequencing, saved history.
 - `Sources/PeonToast.swift`: custom notification toasts.
 - `Sources/NotificationPreferences.swift` and `NotificationSettings.swift`: alert filters and settings.
 - `Sources/UIState.swift`: shared UI state.
-- `Tests/main.swift`: monitor and settings regression checks.
+- `Tests/`: discovered Swift regression tests; `Tests/Native/` tests AppKit actions.
 - `scripts/`: build, test, and release tooling.
 
 Keep authored-PR monitoring, account separation, pause/mute behavior, and saved
@@ -67,7 +74,12 @@ you actually ran. For app changes, run `./scripts/test.sh` and
 
 ```sh
 python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+./scripts/check.sh
 ```
+
+The automation check requires actionlint 1.7.12 and ShellCheck 0.11.0. CI
+downloads these versions. It checks tracked shell scripts and workflows;
+stage new files before running it locally.
 
 Exercise affected failure paths. For visible changes, include screenshots from
 the real app and the macOS version. Say when notification delivery, audio, or

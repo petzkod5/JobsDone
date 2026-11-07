@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-mkdir -p .build
-swiftc Sources/Monitor.swift Sources/UIState.swift Sources/NotificationPreferences.swift Tests/main.swift -o .build/monitor-tests
-.build/monitor-tests
+# Command Line Tools ship Swift Testing outside the default framework search path.
+FRAMEWORKS="$(xcode-select -p)/Library/Developer/Frameworks"
+if [[ -d "$FRAMEWORKS/Testing.framework" ]]; then
+  swift test --disable-xctest -Xswiftc -F -Xswiftc "$FRAMEWORKS" -Xlinker -F -Xlinker "$FRAMEWORKS" -Xlinker -rpath -Xlinker "$FRAMEWORKS" -Xlinker -rpath -Xlinker "$(xcode-select -p)/Library/Developer/usr/lib" "$@"
+else
+  swift test --disable-xctest "$@"
+fi
