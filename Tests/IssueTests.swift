@@ -17,8 +17,10 @@ final class IssueTests {
         expectEqual(requests[0].content.categoryIdentifier, "OPENED_ISSUE")
         expectEqual(requests[0].content.userInfo["url"] as? String, "https://github.com/alice/r/issues/1")
         #expect(requests[0].content.sound != nil)
-        app.preferences.soundEnabled = false
-        await app.post(event: .issueOpened, repository: "alice/r", id: "issue-2", subtitle: "", body: "", url: "", issueOpened: true)
+        let mutedApp = AppDelegate(configuration: config)
+        mutedApp.notificationState = .ready
+        mutedApp.preferences.soundEnabled = false
+        await mutedApp.post(event: .issueOpened, repository: "alice/r", id: "issue-2", subtitle: "", body: "", url: "", issueOpened: true)
         expectEqual(requests.count, 2)
         #expect(requests[1].content.sound == nil)
     }
