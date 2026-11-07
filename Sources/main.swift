@@ -336,10 +336,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 recent = state.recent
                 recentOpened = state.opened?.recent ?? []
                 let since = max(state.startedAt, state.lastCheck.addingTimeInterval(-172800))
-                let prs = try await Task.detached { try GitHub.merged(login: account, since: since) }.value
+                let mergeResult = await Task.detached { Result { try GitHub.merged(login: account, since: since) } }.value
                 var openedState = state.opened!
                 let openedSince = max(openedState.startedAt, openedState.lastCheck.addingTimeInterval(-172800))
-                let openedPRs = try await Task.detached { try GitHub.opened(login: account, since: openedSince) }.value
+                let openedResult = await Task.detached { Result { try GitHub.opened(login: account, since: openedSince) } }.value
+                var failures: [String] = []
+                let prs: [MergedPR]
+                switch mergeResult {
+                case .success(let values): prs = values
+                case .failure(let error): prs = []; failures.append("Merge alerts: " + error.localizedDescription)
+                }
+                let openedPRs: [OpenedPR]
+                switch openedResult {
+                case .success(let values): openedPRs = values
+                case .failure(let error): openedPRs = []; failures.append("Opening alerts: " + error.localizedDescription)
+                }
                 let pendingOpened = openedState.pending(openedPRs)
                 let pending = state.pending(prs)
                 guard !paused, !Task.isCancelled else { return }
@@ -353,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     try store.save(state, login: account)
                     recentOpened = openedState.recent
                 }
-                openedState.lastCheck = started
+                if case .success = openedResult { openedState.lastCheck = started }
                 state.opened = openedState
                 try store.save(state, login: account)
                 guard !paused, !Task.isCancelled else { return }
@@ -365,10 +376,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     try store.save(state, login: account)
                     recent = state.recent
                 }
-                state.lastCheck = started
+                if case .success = mergeResult { state.lastCheck = started }
                 try store.save(state, login: account)
                 lastCheck = Date()
-                monitorError = nil
+                monitorError = failures.isEmpty ? nil : failures.joined(separator: "\n\n")
             } catch { monitorError = error.localizedDescription }
         }
     }
