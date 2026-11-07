@@ -50,6 +50,29 @@ class RunnerCheckTests(unittest.TestCase):
         self.assertIn('matrix.yml:5: runs-on must be one literal runner label', result.stderr)
         self.assertIn("list.yml:5: runs-on must be one literal runner label, not 'a block'", result.stderr)
 
+    def test_alternate_key_spellings_are_checked(self):
+        """Detect valid YAML key spellings that a plain `runs-on:` match would skip."""
+        spaced = ('name: Fixture\non: push\njobs:\n'
+                  '  build:\n    runs-on : macos-26\n    steps:\n      - run: echo fixture\n'
+                  "  release:\n    'runs-on': macos-latest\n    steps:\n      - run: echo fixture\n")
+        result = self.check({'spaced.yml': spaced})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('spaced.yml:9: pin a macOS version instead of macos-latest', result.stderr)
+        self.assertIn('macos-26 at spaced.yml:5; macos-latest at spaced.yml:9', result.stderr)
+
+    def test_mixed_case_macos_label_is_checked(self):
+        """Detect labels that GitHub matches case-insensitively, such as macOS-latest."""
+        result = self.check({'build.yml': job('macos-26'), 'release.yml': job('macOS-latest')})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('release.yml:5: pin a macOS version instead of macos-latest', result.stderr)
+
+    def test_flow_mapping_fails(self):
+        """Detect runner labels hidden in flow-style job mappings."""
+        flow = 'name: Fixture\non: push\njobs:\n  fixture: {runs-on: macos-15, steps: [{run: echo fixture}]}\n'
+        result = self.check({'build.yml': job('macos-26'), 'flow.yml': flow})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('flow.yml:4: write runs-on as a block key with one literal label', result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

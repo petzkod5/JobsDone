@@ -9,19 +9,32 @@ from pathlib import Path
 import re
 import sys
 
-RUNS_ON = re.compile(r'^\s*runs-on:(.*)$')
+# Block-style key, optionally quoted, with optional space before the colon.
+RUNS_ON = re.compile(r'''^\s*(["']?)runs-on\1\s*:(.*)$''')
 
 
-def runner_errors(workflow_dir):
+def workflow_files(paths):
+    for path in map(Path, paths):
+        if path.is_dir():
+            yield from sorted([*path.glob('*.yml'), *path.glob('*.yaml')])
+        else:
+            yield path
+
+
+def runner_errors(paths):
     errors, labels = [], {}
-    files = sorted([*Path(workflow_dir).glob('*.yml'), *Path(workflow_dir).glob('*.yaml')])
-    for path in files:
+    for path in workflow_files(paths):
         for number, line in enumerate(path.read_text().splitlines(), 1):
-            match = RUNS_ON.match(line)
-            if not match:
+            if 'runs-on' not in line.split('#', 1)[0]:
                 continue
             where = f'{path.name}:{number}'
-            label = match.group(1).split('#', 1)[0].strip().strip('\'"')
+            match = RUNS_ON.match(line)
+            if not match:
+                # Flow mappings or other syntax could hide a label from this line scan.
+                errors.append(f'{where}: write runs-on as a block key with one literal label')
+                continue
+            # GitHub matches runner labels case-insensitively.
+            label = match.group(2).split('#', 1)[0].strip().strip('\'"').lower()
             # Expressions, lists, and mappings could hide a macOS label; fail closed.
             if not re.fullmatch(r'[A-Za-z0-9._-]+', label):
                 errors.append(f'{where}: runs-on must be one literal runner label, not {label or "a block"!r}')
@@ -36,8 +49,9 @@ def runner_errors(workflow_dir):
 
 
 def main():
-    workflow_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / '.github/workflows'
-    errors = runner_errors(workflow_dir)
+    # check.sh passes tracked workflow files; a directory argument checks every workflow in it.
+    paths = sys.argv[1:] or [Path(__file__).resolve().parents[1] / '.github/workflows']
+    errors = runner_errors(paths)
     for error in errors:
         print(error, file=sys.stderr)
     return 1 if errors else 0

@@ -12,7 +12,7 @@ RUNNERS = Path(__file__).resolve().parents[1] / 'check-runners.py'
 
 @unittest.skipUnless(shutil.which('actionlint') and shutil.which('shellcheck'), 'Pinned lint tools required')
 class AutomationCheckTests(unittest.TestCase):
-    def check(self, shell='#!/bin/bash\necho "fixture"\n', workflow_extra='', runner='ubuntu-latest'):
+    def check(self, shell='#!/bin/bash\necho "fixture"\n', workflow_extra='', runner='ubuntu-latest', untracked_workflow=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'scripts').mkdir()
@@ -35,6 +35,8 @@ jobs:
                 env.pop(key, None)
             subprocess.run(['git', 'init', '-q', str(root)], check=True, env=env)
             subprocess.run(['git', '-C', str(root), 'add', '.'], check=True, env=env)
+            if untracked_workflow:
+                (workflows / 'draft.yml').write_text(untracked_workflow)
             return subprocess.run(['bash', str(root / 'scripts/check.sh')], env=env, capture_output=True, text=True)
 
     def test_valid_tracked_files_pass(self):
@@ -59,6 +61,11 @@ jobs:
         result = self.check(runner='macos-latest')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('pin a macOS version instead of macos-latest', result.stdout + result.stderr)
+
+    def test_untracked_workflow_is_not_checked(self):
+        """Detect the runner gate reading local drafts that actionlint does not check."""
+        result = self.check(untracked_workflow='name: Draft\non: push\njobs:\n  x:\n    runs-on: macos-latest\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == '__main__':
