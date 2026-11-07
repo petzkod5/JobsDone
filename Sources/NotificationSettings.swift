@@ -8,6 +8,7 @@ final class NotificationSettingsController: NSWindowController {
     var openSystemSettings: (() -> Void)?
     private var eventButtons: [NotificationEvent: NSButton] = [:]
     private let soundButton = NSButton(checkboxWithTitle: "Play celebration sounds", target: nil, action: nil)
+    private let soundPack = NSPopUpButton()
     private let style = NSPopUpButton()
     private let pollingInterval = NSPopUpButton()
     private let notificationDuration = NSPopUpButton()
@@ -144,6 +145,13 @@ final class NotificationSettingsController: NSWindowController {
         let styleRow = NSStackView(views: [styleLabel, NSView(), style])
         styleRow.spacing = 12
         style.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        soundPack.addItems(withTitles: preferences.soundPacks.packs.map(\.name))
+        soundPack.setAccessibilityLabel("Sound pack")
+        soundPack.target = self
+        soundPack.action = #selector(soundPackChanged)
+        soundPack.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        let packRow = NSStackView(views: [label("Sound pack", heading: true), NSView(), soundPack])
+        packRow.spacing = 12
         soundButton.target = self
         soundButton.action = #selector(soundChanged)
         soundButton.font = .systemFont(ofSize: 13)
@@ -177,9 +185,9 @@ final class NotificationSettingsController: NSWindowController {
         durationHelp.maximumNumberOfLines = 2
         let pollingRow = timingRow("GitHub polling interval", control: pollingInterval,
                                    values: NotificationPreferences.pollingIntervals, action: #selector(pollingChanged))
-        let delivery = vertical([styleRow, durationRow, durationHelp, pollingRow, separator(), soundRow], spacing: 8)
+        let delivery = vertical([styleRow, durationRow, durationHelp, pollingRow, separator(), packRow, soundRow], spacing: 8)
         add(surface(delivery))
-        for row in [styleRow, durationRow, durationHelp, pollingRow, soundRow] {
+        for row in [styleRow, durationRow, durationHelp, pollingRow, packRow, soundRow] {
             row.widthAnchor.constraint(equalTo: delivery.widthAnchor).isActive = true
         }
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
@@ -278,6 +286,7 @@ final class NotificationSettingsController: NSWindowController {
     func refresh(systemSoundAllowed: Bool? = nil) {
         if let systemSoundAllowed { self.systemSoundAllowed = systemSoundAllowed }
         for (event, button) in eventButtons { button.state = preferences.isEnabled(event) ? .on : .off }
+        soundPack.selectItem(at: preferences.soundPacks.packs.firstIndex { $0.id == preferences.soundPack.id } ?? 0)
         soundButton.state = preferences.soundEnabled ? .on : .off
         soundStatus.stringValue = self.systemSoundAllowed ? "macOS permission and Focus settings also apply." : "Sound is disabled in macOS. Enable it in Notification Settings."
         style.selectItem(at: preferences.nativeNotifications ? 1 : 0)
@@ -335,6 +344,11 @@ final class NotificationSettingsController: NSWindowController {
     @objc private func durationChanged() {
         preferences.notificationDuration = NotificationPreferences.notificationDurations[notificationDuration.indexOfSelectedItem]
         refresh()
+    }
+    @objc private func soundPackChanged() {
+        guard preferences.soundPacks.packs.indices.contains(soundPack.indexOfSelectedItem) else { return }
+        preferences.soundPack = preferences.soundPacks.packs[soundPack.indexOfSelectedItem]
+        changed()
     }
     @objc private func soundChanged() { preferences.soundEnabled = soundButton.state == .on; changed() }
     @objc private func styleChanged() { preferences.nativeNotifications = style.indexOfSelectedItem == 1; changed() }

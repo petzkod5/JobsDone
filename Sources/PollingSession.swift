@@ -33,7 +33,7 @@ final class PollingSession {
     var now: () -> Date
     var paused: () -> Bool
     var prepareDelivery: () async -> Void
-    var playSound: (String, NotificationEvent, String) async -> Bool
+    var playSound: (NotificationEvent, String) async -> Bool
     var post: (Delivery) async -> Void
     var login = ""
     var recent: [MergedPR] = []
@@ -44,7 +44,7 @@ final class PollingSession {
 
     init(github: GitHubResponses = .live, store: StateStore, now: @escaping () -> Date = Date.init,
          paused: @escaping () -> Bool, prepareDelivery: @escaping () async -> Void,
-         playSound: @escaping (String, NotificationEvent, String) async -> Bool,
+         playSound: @escaping (NotificationEvent, String) async -> Bool,
          post: @escaping (Delivery) async -> Void) {
         self.github = github; self.store = store; self.now = now; self.paused = paused
         self.prepareDelivery = prepareDelivery; self.playSound = playSound; self.post = post
@@ -102,7 +102,7 @@ final class PollingSession {
         var playedOpenedSound = false
         for pr in pending {
             guard !paused(), !Task.isCancelled else { return false }
-            if !playedOpenedSound { playedOpenedSound = await playSound("WorkWork", .opened, pr.repository.nameWithOwner) }
+            if !playedOpenedSound { playedOpenedSound = await playSound(.opened, pr.repository.nameWithOwner) }
             guard !paused(), !Task.isCancelled else { return false }
             await post(Delivery(event: .opened, repository: pr.repository.nameWithOwner, id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true))
             openedState.record(pr)
@@ -121,7 +121,7 @@ final class PollingSession {
         var playedMergeSound = false
         for pr in pending {
             guard !paused(), !Task.isCancelled else { return false }
-            if !playedMergeSound { playedMergeSound = await playSound("JobsDone", .merged, pr.repository.nameWithOwner) }
+            if !playedMergeSound { playedMergeSound = await playSound(.merged, pr.repository.nameWithOwner) }
             guard !paused(), !Task.isCancelled else { return false }
             await post(Delivery(event: .merged, repository: pr.repository.nameWithOwner, id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url))
             state.record(pr)
@@ -153,7 +153,7 @@ final class PollingSession {
                 try store.save(state, login: account)
                 for notice in notices {
                     guard !paused(), !Task.isCancelled else { return false }
-                    if !playedCommitSound { playedCommitSound = await playSound("Hmmm", .committed, pr.repository.nameWithOwner) }
+                    if !playedCommitSound { playedCommitSound = await playSound(.committed, pr.repository.nameWithOwner) }
                     guard !paused(), !Task.isCancelled else { return false }
                     let author = notice.commit.author.user!.login
                     await post(Delivery(event: .committed, repository: pr.repository.nameWithOwner, id: "commit-" + notice.id, subtitle: "New commit · \(pr.repository.nameWithOwner) #\(pr.number)", body: "@\(author): \(notice.commit.messageHeadline)", url: pr.url, committed: true))
