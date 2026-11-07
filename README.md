@@ -18,7 +18,7 @@ An issue opens in a repository you own: **“Something need doing?”**
 You hear about your PRs the moment they change, without keeping a GitHub tab
 open or digging through email.
 
-<!-- Demo GIF goes here once it's final: ![Job’s Done demo](docs/demo.gif) -->
+![Job’s Done demo](docs/demo.gif)
 
 ## Install
 
