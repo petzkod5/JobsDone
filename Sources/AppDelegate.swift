@@ -108,11 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func updatePermission() {
         guard !configuration.isolated else { return }
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            Task { @MainActor in self?.apply(settings) }
+            let snapshot = NotificationSettingsSnapshot(settings)
+            Task { @MainActor in self?.apply(snapshot) }
         }
     }
 
-    private func apply(_ settings: UNNotificationSettings) {
+    private func apply(_ settings: NotificationSettingsSnapshot) {
         switch settings.authorizationStatus {
         case .notDetermined: notificationState = .notDetermined
         case .denied: notificationState = .denied
@@ -515,7 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         pollTask = Task {
             defer { busy = false; refreshMenu(); updatePermission() }
             let session = PollingSession(store: store, paused: { self.paused }, prepareDelivery: {
-                self.apply(await UNUserNotificationCenter.current().notificationSettings())
+                self.apply(await NotificationSettingsSnapshot.current())
             }, playSound: { await self.playSound(resource: $0, event: $1, repository: $2) }, post: {
                 await self.post(event: $0.event, repository: $0.repository, id: $0.id, subtitle: $0.subtitle,
                                 body: $0.body, url: $0.url, opened: $0.opened, committed: $0.committed)
@@ -605,7 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         refreshMenu()
         Task {
             defer { testing = false; refreshMenu() }
-            apply(await UNUserNotificationCenter.current().notificationSettings())
+            apply(await NotificationSettingsSnapshot.current())
             await playSound(resource: committed ? "Hmmm" : opened ? "WorkWork" : "JobsDone")
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
             await post(id: "jobsdone-test-current", subtitle: committed ? "Sample commit by another author" : opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open your GitHub pull requests.", url: "https://github.com/pulls", opened: opened, committed: committed)
@@ -624,11 +625,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if content.sound != nil { options.insert(.sound) }
         completionHandler(options)
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let value = response.notification.request.content.userInfo["url"] as? String
-        Task { @MainActor in
-            if response.actionIdentifier != UNNotificationDismissActionIdentifier, let value { self.open(value) }
-            completionHandler()
-        }
+        let dismissed = response.actionIdentifier == UNNotificationDismissActionIdentifier
+        if !dismissed, let value { await MainActor.run { self.open(value) } }
     }
 }

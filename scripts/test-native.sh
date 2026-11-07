@@ -14,5 +14,5 @@ sources=()
 for source in Sources/*.swift; do
   [[ "$source" == Sources/main.swift ]] || sources+=("$source")
 done
-swiftc "${sources[@]}" Tests/Native/main.swift -o "$APP/Contents/MacOS/NativeTests"
+swiftc -swift-version 6 -strict-concurrency=complete -warnings-as-errors -target "$(uname -m)-apple-macosx13.0" "${sources[@]}" Tests/Native/main.swift -o "$APP/Contents/MacOS/NativeTests"
 "$APP/Contents/MacOS/NativeTests" "$EVIDENCE"
