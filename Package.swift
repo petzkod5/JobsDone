@@ -6,8 +6,9 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [.executable(name: "JobsDone", targets: ["JobsDone"])],
     targets: [
-        .executableTarget(name: "JobsDone", path: "Sources"),
-        .testTarget(name: "JobsDoneTests", dependencies: ["JobsDone"], path: "Tests", exclude: ["Native"])
+        .executableTarget(name: "JobsDone", path: "Sources", swiftSettings: [.unsafeFlags(["-warnings-as-errors"])]),
+        .testTarget(name: "JobsDoneTests", dependencies: ["JobsDone"], path: "Tests", exclude: ["Native"],
+                    swiftSettings: [.unsafeFlags(["-warnings-as-errors"])])
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v6]
 )

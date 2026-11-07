@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 enum NotificationReadiness: Equatable {
     case checking, notDetermined, denied, quiet, ready
@@ -35,5 +36,30 @@ struct ToastPreview {
     init(subtitle: String, body: String, previewsEnabled: Bool) {
         self.subtitle = previewsEnabled ? subtitle : "Pull request update"
         self.body = previewsEnabled ? body : "A pull request update is ready."
+    }
+}
+
+// Copy framework-owned settings before crossing to the main actor.
+struct NotificationSettingsSnapshot: Sendable {
+    let authorizationStatus: UNAuthorizationStatus
+    let alertSetting: UNNotificationSetting
+    let alertStyle: UNAlertStyle
+    let soundSetting: UNNotificationSetting
+    let showPreviewsSetting: UNShowPreviewsSetting
+
+    static func current() async -> NotificationSettingsSnapshot {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: NotificationSettingsSnapshot(settings))
+            }
+        }
+    }
+
+    init(_ settings: UNNotificationSettings) {
+        authorizationStatus = settings.authorizationStatus
+        alertSetting = settings.alertSetting
+        alertStyle = settings.alertStyle
+        soundSetting = settings.soundSetting
+        showPreviewsSetting = settings.showPreviewsSetting
     }
 }

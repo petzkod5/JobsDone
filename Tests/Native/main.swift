@@ -27,7 +27,7 @@ MainActor.assumeIsolated {
         let window = controller.window!
         require(window.isVisible, "isolated app launched and settings window is visible")
         require(Bundle.main.bundleIdentifier == "org.jobsdone.native-tests", "separate bundle identity")
-        func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
+        @MainActor func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
         let controls = views(window.contentView!)
         let buttons = controls.compactMap { $0 as? NSButton }
         let event = buttons.first { $0.identifier?.rawValue == "opened" }!
