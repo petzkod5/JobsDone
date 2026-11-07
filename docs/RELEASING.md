@@ -32,6 +32,10 @@ to an ancestor of main, and its `version.txt` and manifest must match `vX.Y.Z`.
 The app checkout must be exactly that commit. Release tooling comes from the
 reviewed workflow commit on main, in a separate checkout. This allows a tooling
 fix to recover an older draft without moving its tag or changing app source.
+The package and tap jobs use the same pinned macOS runner label as the
+`Build and test`, `Typecheck`, and `Lint` workflows, so the release compiler is
+the one that checked the merged source. `./scripts/check.sh` fails when a macOS
+job uses a `-latest` label or a different label; change every workflow together.
 Packaging builds both arm64
 and x86_64 for macOS 13, replaces the native bundled binary, sets both built bundle
 version fields to the semver, and signs the result without editing source plist.

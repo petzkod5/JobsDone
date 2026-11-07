@@ -7,15 +7,17 @@ import tempfile
 import unittest
 
 CHECK = Path(__file__).resolve().parents[1] / 'check.sh'
+RUNNERS = Path(__file__).resolve().parents[1] / 'check-runners.py'
 
 
 @unittest.skipUnless(shutil.which('actionlint') and shutil.which('shellcheck'), 'Pinned lint tools required')
 class AutomationCheckTests(unittest.TestCase):
-    def check(self, shell='#!/bin/bash\necho "fixture"\n', workflow_extra=''):
+    def check(self, shell='#!/bin/bash\necho "fixture"\n', workflow_extra='', runner='ubuntu-latest'):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'scripts').mkdir()
             shutil.copyfile(CHECK, root / 'scripts/check.sh')
+            shutil.copyfile(RUNNERS, root / 'scripts/check-runners.py')
             (root / 'scripts/fixture.sh').write_text(shell)
             workflows = root / '.github/workflows'
             workflows.mkdir(parents=True)
@@ -23,10 +25,10 @@ class AutomationCheckTests(unittest.TestCase):
 on: push
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: {runner}
     steps:
       - run: echo fixture
-''' + workflow_extra)
+'''.format(runner=runner) + workflow_extra)
             env = dict(os.environ)
             # Keep parent repository discovery overrides out of the fixture.
             for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE'):
@@ -51,6 +53,12 @@ jobs:
         result = self.check(workflow_extra='    invalid_fixture_key: true\n')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('invalid_fixture_key', result.stdout + result.stderr)
+
+    def test_floating_macos_runner_fails(self):
+        """Detect check.sh skipping the shared macOS runner gate."""
+        result = self.check(runner='macos-latest')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('pin a macOS version instead of macos-latest', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

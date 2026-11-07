@@ -25,3 +25,4 @@ fi
 if ((${#WORKFLOW_FILES[@]})); then
   actionlint "${WORKFLOW_FILES[@]}"
 fi
+python3 scripts/check-runners.py .github/workflows

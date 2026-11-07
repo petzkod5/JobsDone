@@ -6,7 +6,7 @@ so we can agree on the behavior before you build it.
 
 ## Build locally
 
-You need macOS, Swift 6 or later, and Xcode Command Line Tools. The app targets
+You need macOS, Swift 6.2 or later, and Xcode Command Line Tools. The app targets
 macOS 13+; use macOS 14+ for the Swift Testing runtime. Install
 [GitHub CLI](https://cli.github.com/) through Homebrew if you
 want to try PR monitoring.
