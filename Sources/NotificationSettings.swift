@@ -44,7 +44,9 @@ final class NotificationSettingsController: NSWindowController {
         return label
     }
     private func build() {
-        guard let content = window?.contentView else { return }
+        guard let window else { return }
+        let content = SettingsBackground(frame: window.contentView?.frame ?? .zero)
+        window.contentView = content
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -87,7 +89,18 @@ final class NotificationSettingsController: NSWindowController {
         }
         let title = label("Notifications", heading: true)
         title.font = .systemFont(ofSize: 20, weight: .semibold)
-        add(vertical([title, label("For all GitHub accounts on this Mac")], spacing: 4))
+        let titleBlock = vertical([title, label("For all GitHub accounts on this Mac")], spacing: 4)
+        let header = NSStackView(views: [titleBlock])
+        header.spacing = 12
+        if let path = Bundle.main.path(forResource: "PeonPortrait", ofType: "png"), let image = NSImage(contentsOfFile: path) {
+            let portrait = NSImageView(image: image)
+            portrait.imageScaling = .scaleProportionallyUpOrDown
+            portrait.setAccessibilityElement(false)
+            portrait.widthAnchor.constraint(equalToConstant: 36).isActive = true
+            portrait.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            header.insertArrangedSubview(portrait, at: 0)
+        }
+        add(header)
         stack.setCustomSpacing(24, after: stack.arrangedSubviews.last!)
         add(label("Your authored PRs", heading: true))
         var eventRows: [NSView] = []
@@ -124,16 +137,20 @@ final class NotificationSettingsController: NSWindowController {
         soundButton.font = .systemFont(ofSize: 13)
         soundStatus.font = .systemFont(ofSize: 12)
         soundStatus.textColor = .secondaryLabelColor
-        soundStatus.maximumNumberOfLines = 1
-        soundStatus.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        let soundRow = vertical([soundButton, soundStatus], spacing: 3)
-        soundStatus.leadingAnchor.constraint(equalTo: soundRow.leadingAnchor, constant: 20).isActive = true
+        soundStatus.maximumNumberOfLines = 2
+        soundStatus.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        soundStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let systemButton = NSButton(title: "macOS Notification Settings…", target: self, action: #selector(systemSettings))
         systemButton.controlSize = .small
-        let systemRow = NSStackView(views: [NSView(), systemButton])
-        let delivery = vertical([styleRow, separator(), soundRow, systemRow], spacing: 8)
+        systemButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let permissionRow = NSStackView(views: [soundStatus, systemButton])
+        permissionRow.spacing = 12
+        let soundRow = vertical([soundButton, permissionRow], spacing: 3)
+        permissionRow.leadingAnchor.constraint(equalTo: soundRow.leadingAnchor, constant: 20).isActive = true
+        permissionRow.trailingAnchor.constraint(equalTo: soundRow.trailingAnchor).isActive = true
+        let delivery = vertical([styleRow, separator(), soundRow], spacing: 8)
         add(surface(delivery))
-        for row in [styleRow, soundRow, systemRow] {
+        for row in [styleRow, soundRow] {
             row.widthAnchor.constraint(equalTo: delivery.widthAnchor).isActive = true
         }
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
@@ -203,15 +220,18 @@ final class NotificationSettingsController: NSWindowController {
         ])
         stack.setCustomSpacing(18, after: list)
         add(separator())
-        add(label("Filtered events stay in history and won’t notify later.\nPaused events catch up when you resume."))
+        let policy = label("Filtered events stay in history and won’t notify later.\nPaused events catch up when you resume.")
         let saved = label("Changes save immediately.")
+        let footerCopy = vertical([policy, saved], spacing: 4)
         let help = NSButton(title: "About notification tests…", target: self, action: #selector(aboutTests))
         help.bezelStyle = .rounded
         help.controlSize = .small
-        add(NSStackView(views: [saved, NSView(), help]))
+        let footer = NSStackView(views: [footerCopy, NSView(), help])
+        footer.spacing = 12
+        add(footer)
         content.layoutSubtreeIfNeeded()
-        window?.setContentSize(NSSize(width: 600, height: stack.fittingSize.height + 48))
-        window?.initialFirstResponder = repositoryField
+        window.setContentSize(NSSize(width: 600, height: stack.fittingSize.height + 48))
+        window.initialFirstResponder = repositoryField
     }
     @objc private func aboutTests() {
         guard let window else { return }
@@ -233,7 +253,13 @@ final class NotificationSettingsController: NSWindowController {
         for view in entries.arrangedSubviews { entries.removeArrangedSubview(view); view.removeFromSuperview() }
         repositoryCount.stringValue = "\(repositories.count) ignored"
         emptyState.isHidden = !repositories.isEmpty
-        for repo in repositories {
+        for (index, repo) in repositories.enumerated() {
+            if index > 0 {
+                let separator = NSBox()
+                separator.boxType = .separator
+                entries.addArrangedSubview(separator)
+                separator.widthAnchor.constraint(equalTo: entries.widthAnchor, constant: -24).isActive = true
+            }
             let name = NSTextField(labelWithString: repo)
             name.font = .systemFont(ofSize: 13)
             name.lineBreakMode = .byTruncatingMiddle
@@ -301,5 +327,13 @@ private final class SettingsSurface: NSView {
         NSColor.separatorColor.setStroke()
         path.lineWidth = 0.5
         path.stroke()
+    }
+}
+
+private final class SettingsBackground: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let background = NSColor.windowBackgroundColor.blended(withFraction: 0.04, of: .labelColor) ?? .windowBackgroundColor
+        background.setFill()
+        bounds.fill()
     }
 }
