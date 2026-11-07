@@ -7,6 +7,8 @@ Write documentation in plain, specific language. Use actual commands and menu
 labels, remove repetition, and keep claims tied to source or checks performed.
 Avoid promotional filler, generic best-practice lists, and documents that repeat
 each other. Keep the README focused on installing and using the app.
+Keep writing changes within the requested scope. Do not add contribution
+policies or expand the README as part of a wording cleanup.
 
 ## Commits and pull requests
 
@@ -30,6 +32,12 @@ Use a lowercase type from `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `t
 ## Validation
 
 Run `./scripts/test.sh` and `./scripts/build.sh` for app changes. For automation changes, validate the affected scripts and workflows and exercise their failure paths. Never claim a release or notification was tested when only a source review was performed.
+
+Test the production path that owns the behavior. Do not reproduce that path in
+the test and then assert its result. Replace external services at their
+boundaries, and check the requests and observable results. For a bug fix,
+confirm that its regression test fails without the fix. Keep reusable test
+harnesses in version control and isolate their preferences and saved history.
 
 ## Releases
 

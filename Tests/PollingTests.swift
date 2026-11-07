@@ -50,6 +50,19 @@ private final class PollFixture {
 }
 
 final class PollingTests {
+    @Test @MainActor func testProductionPostHonorsNotificationReadiness() async throws {
+        let f = try PollFixture(); defer { f.clean() }
+        for state in [NotificationReadiness.checking, .notDetermined, .denied] {
+            f.app.notificationState = state
+            await f.app.post(event: .merged, repository: "o/r", id: "blocked", subtitle: "", body: "", url: "")
+        }
+        expectEqual(f.output, [])
+        for state in [NotificationReadiness.quiet, .ready] {
+            f.app.notificationState = state
+            await f.app.post(event: .merged, repository: "o/r", id: "allowed", subtitle: "", body: "", url: "")
+        }
+        expectEqual(f.output, ["allowed", "allowed"])
+    }
     @Test @MainActor func testSuppressedEventsAreSilentAndRecordedWithoutReplayAfterReload() async throws {
         let f = try PollFixture(); defer { f.clean() }
         for event in NotificationEvent.allCases { f.app.preferences.setEnabled(false, for: event) }
