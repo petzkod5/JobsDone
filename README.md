@@ -6,17 +6,14 @@
 
 ## Install
 
-You'll need **macOS 13+**, **Swift 6+** (Xcode or Command Line Tools), and [Homebrew](https://brew.sh).
+Requires **macOS 13+** and [Homebrew](https://brew.sh).
 
 ```sh
-brew install gh
+brew install --cask petzkod5/tap/jobsdone
 gh auth login --hostname github.com
-git clone https://github.com/petzkod5/JobsDone.git
-cd JobsDone
-./scripts/install.sh
 ```
 
-The installer builds the app, copies it to `~/Applications`, and launches it. Quit any running copy before reinstalling. This is a local, ad-hoc signed build, not a notarized download.
+Homebrew installs the signed, notarized app and GitHub CLI. Open **Job’s Done** from Applications.
 
 ## Set up
 
