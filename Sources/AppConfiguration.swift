@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 struct AppConfiguration {
     var defaults: UserDefaults
@@ -9,6 +10,7 @@ struct AppConfiguration {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
     var soundOutput: ((String) -> Bool)?
+    var notificationOutput: ((UNNotificationRequest) async throws -> Void)?
     var output: ((String) -> Void)?
 
     static var production: AppConfiguration {

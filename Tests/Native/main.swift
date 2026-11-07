@@ -5,10 +5,20 @@ let evidence = URL(fileURLWithPath: CommandLine.arguments[1])
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let config = AppConfiguration.isolated(directory: evidence.appendingPathComponent("history"))
-    let delegate = AppDelegate(configuration: config)
+    var config = AppConfiguration.isolated(directory: evidence.appendingPathComponent("history"))
+    var scheduled: [TimeInterval] = []
+    var dismissActions: [() -> Void] = []
+    var posted: [String] = []
+    let presenter = PeonToastPresenter(scheduleTimer: { interval, action in
+        scheduled.append(interval)
+        dismissActions.append(action)
+        return Timer(timeInterval: interval, repeats: false) { _ in }
+    })
+    config.notificationOutput = { posted.append($0.identifier) }
+    let delegate = AppDelegate(configuration: config, peonToasts: presenter)
     app.delegate = delegate
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        Task { @MainActor in
         func require(_ condition: Bool, _ name: String) {
             guard condition else { fputs("FAIL: \(name)\n", stderr); exit(1) }
             print("PASS: \(name)")
@@ -55,14 +65,20 @@ MainActor.assumeIsolated {
         style.selectItem(at: 0)
         app.sendAction(style.action!, to: style.target, from: style)
         require(duration.isEnabled && duration.titleOfSelectedItem == "15 seconds", "Peon duration restored")
-        var scheduled: [TimeInterval] = []
-        let presenter = PeonToastPresenter(scheduleTimer: { interval, _ in
-            scheduled.append(interval)
-            return Timer(timeInterval: interval, repeats: false) { _ in }
-        })
-        presenter.show(id: "jobsdone-test-duration", title: "Test", subtitle: "Timing", body: "Fixture", duration: delegate.preferences.notificationDuration, open: {})
-        require(!scheduled.isEmpty && scheduled.allSatisfy { $0 == 15 }, "toast production scheduler uses selected duration for tests")
+        await delegate.post(id: "jobsdone-test-duration", subtitle: "Timing", body: "Fixture", url: "https://github.com/owner/repo/pull/1")
+        require(posted == ["jobsdone-test-duration"], "production post reached notification boundary")
+        require(!scheduled.isEmpty && scheduled.allSatisfy { $0 == 15 }, "production post forwards selected duration for tests")
+        require(app.windows.contains { $0.title == "Job’s Done — Timing" && $0.isVisible }, "production post showed toast")
+        dismissActions.last!()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        require(!app.windows.contains { $0.title == "Job’s Done — Timing" && $0.isVisible }, "scheduled callback dismissed toast")
+        scheduled.removeAll()
+        delegate.preferences.notificationDuration = 30
+        await delegate.post(event: .merged, repository: "owner/repo", id: "real-duration", subtitle: "Event timing", body: "Fixture", url: "https://github.com/owner/repo/pull/1")
+        require(!scheduled.isEmpty && scheduled.allSatisfy { $0 == 30 }, "new event toast reads changed duration")
+        require(posted.last == "real-duration", "event reached notification boundary")
         presenter.dismissAll()
+        delegate.preferences.notificationDuration = 15
         delegate.showSettings()
         require(delegate.settingsController === controller, "settings singleton reused")
         require(delegate.menu.items.contains { $0.title == "Settings…" && $0.keyEquivalent == "," }, "settings menu shortcut retained")
@@ -94,6 +110,7 @@ MainActor.assumeIsolated {
         print("Compositor capture exit: \(capture.terminationStatus)")
         window.close()
         exit(0)
+        }
     }
     withExtendedLifetime(delegate) { app.run() }
 }

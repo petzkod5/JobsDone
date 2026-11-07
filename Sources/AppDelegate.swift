@@ -42,10 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var helpWindow: NSWindow?
     private var helpTestButton: NSButton?
     private var helpMenuButton: NSButton?
-    private let peonToasts = PeonToastPresenter()
+    private let peonToasts: PeonToastPresenter
     private var usesPeonToasts: Bool { !preferences.nativeNotifications }
 
-    init(configuration: AppConfiguration = .production) {
+    init(configuration: AppConfiguration = .production, peonToasts: PeonToastPresenter? = nil) {
+        self.peonToasts = peonToasts ?? PeonToastPresenter()
         self.configuration = configuration
         preferences = NotificationPreferences(defaults: configuration.defaults)
         store = StateStore(directory: configuration.historyDirectory)
@@ -580,7 +581,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let portrait { content.attachments = [portrait.0] }
         defer { if let portrait { try? FileManager.default.removeItem(at: portrait.1) } }
         do {
-            try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+            if let output = configuration.notificationOutput { try await output(request) }
+            else { try await UNUserNotificationCenter.current().add(request) }
             deliveryWarning = nil
         } catch { deliveryWarning = "macOS could not accept the notification. Review Notification Settings and try the test again." }
     }
