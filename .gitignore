@@ -4,3 +4,4 @@ dist/
 .local/
 evidence/
 .swiftpm/
+__pycache__/
