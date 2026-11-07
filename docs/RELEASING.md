@@ -12,14 +12,14 @@ Enable **Settings → Actions → General → Allow GitHub Actions to create and
 approve pull requests** and permit the workflow's declared token permissions.
 Create `petzkod5/homebrew-tap` with an initial commit on `main`. Add a write SSH
 deploy key there and store its private key as this repository's
-`HOMEBREW_TAP_DEPLOY_KEY` secret. Root handles this remote setup.
+`HOMEBREW_TAP_DEPLOY_KEY` secret. These are configured for this repository.
 
 The Release workflow runs on main pushes and manual dispatch. It uses
 `GITHUB_TOKEN` for Release Please. Since events from this token do not trigger
 ordinary PR/tag/release workflows, packaging runs as dependent jobs in the same
 workflow. Release PR creation/updates explicitly dispatch `build.yml` at the PR
-head branch and `conventional-commits.yml` on main with the `pr` number. The latter
-workflow must validate/report status at the current PR head. Both workflows must
+head branch and `conventional-commits.yml` on that same branch with the `pr`
+number, so both checks report against the current PR head. Both workflows must
 support dispatch on main before this pipeline is enabled. No PR output means no
 CI dispatch. Branch protection still applies; maintainers review and merge PRs.
 
