@@ -252,3 +252,89 @@ let visiblePreview = ToastPreview(subtitle: "repo #123 merged", body: "Fix bug",
 expectEqual(visiblePreview.subtitle, "repo #123 merged")
 expectEqual(visiblePreview.body, "Fix bug")
 print("Passed 7 monitor scenarios plus commit baseline/author/deduplication/force-push/migration, complete-history pagination, notification-readiness, Unicode truncation, and preview-privacy assertions.")
+
+func testNotificationPreferences() throws {
+    let suite = "JobsDone.tests." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let prefs = NotificationPreferences(defaults: defaults)
+    for event in NotificationEvent.allCases { expect(prefs.isEnabled(event)) }
+    expect(prefs.soundEnabled)
+    expect(!prefs.nativeNotifications)
+    expect(prefs.ignoredRepositories.isEmpty)
+    defaults.set(true, forKey: "muted")
+    defaults.set(true, forKey: "nativeNotifications")
+    let migrated = NotificationPreferences(defaults: defaults)
+    expect(!migrated.soundEnabled)
+    expect(migrated.nativeNotifications)
+    for event in NotificationEvent.allCases { expect(migrated.isEnabled(event)) }
+    prefs.setEnabled(false, for: .opened)
+    expect(!NotificationPreferences(defaults: UserDefaults(suiteName: suite)!).isEnabled(.opened))
+    expect(prefs.isEnabled(.merged))
+    expectEqual(prefs.addRepository("  OwNeR/Repo\n"), nil)
+    expectEqual(prefs.ignoredRepositories, ["owner/repo"])
+    expect(prefs.addRepository("OWNER/REPO") != nil)
+    for input in ["", "owner", "owner/repo/extra", "https://github.com/owner/repo", "owner/*", "-owner/repo", "owner-/repo", "ow ner/repo", "é/repo", "owner/.", "owner/..", "owner/re po", "owner/", "/repo", String(repeating: "a", count: 40) + "/repo", "owner/" + String(repeating: "r", count: 101)] {
+        expect(prefs.addRepository(input) != nil)
+    }
+    expectEqual(prefs.addRepository(String(repeating: "a", count: 39) + "/" + String(repeating: "r", count: 100)), nil)
+    expectEqual(prefs.addRepository("owner/repo._-"), nil)
+    for event in NotificationEvent.allCases { expect(!prefs.allows(event, repository: "Owner/Repo")) }
+    expect(prefs.allows(.merged, repository: "another/repo"))
+    expect(prefs.allows(.merged, repository: "owner/repository"))
+    prefs.removeRepository("owner/repo")
+    expect(NotificationPreferences(defaults: defaults).allows(.merged, repository: "owner/repo"))
+    prefs.soundEnabled = true
+    expectEqual(defaults.bool(forKey: "muted"), false)
+    prefs.nativeNotifications = false
+    expectEqual(defaults.bool(forKey: "nativeNotifications"), false)
+    let otherSuite = suite + ".other"
+    let other = UserDefaults(suiteName: otherSuite)!
+    defer { other.removePersistentDomain(forName: otherSuite) }
+    expect(NotificationPreferences(defaults: other).isEnabled(.opened))
+    expect(NotificationPreferences(defaults: other).ignoredRepositories.isEmpty)
+
+    // Suppressed events still use the normal account record and snapshot paths.
+    let start = Date(timeIntervalSince1970: 1000)
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = StateStore(directory: directory)
+    var account = try store.load(login: "alice", now: start)
+    let merge = MergedPR(id: "m", title: "Merge", url: "https://github.com/owner/repo/pull/1", number: 1, mergedAt: start, repository: .init(nameWithOwner: "owner/repo"))
+    let opened = OpenedPR(id: "o", title: "Opened", url: merge.url, number: 1, createdAt: start, repository: merge.repository)
+    let pr = CommitPR(id: "c", title: "Commits", url: merge.url, number: 1, createdAt: start, headRefOid: "new", repository: merge.repository)
+    let commit = PRCommit(oid: "new", messageHeadline: "Change", committedDate: start.addingTimeInterval(1), author: .init(user: .init(login: "bob")))
+    prefs.setEnabled(false, for: .merged)
+    prefs.setEnabled(false, for: .committed)
+    expect(!prefs.allows(.merged, repository: merge.repository.nameWithOwner))
+    expect(!prefs.allows(.opened, repository: opened.repository.nameWithOwner))
+    account.record(merge)
+    account.opened!.record(opened)
+    account.commits!.initialized = true
+    let notices = account.commits!.prepare([commit], on: pr, login: "alice")
+    expectEqual(notices.count, 1)
+    account.commits!.record(notices[0])
+    account.commits!.snapshot([commit], on: pr)
+    account.lastCheck = start.addingTimeInterval(10)
+    try store.save(account, login: "alice")
+    for event in NotificationEvent.allCases { prefs.setEnabled(true, for: event) }
+    let restored = try store.load(login: "alice", now: start)
+    expectEqual(restored.recent, [merge])
+    expectEqual(restored.opened!.recent, [opened])
+    expectEqual(restored.commits!.recent, notices)
+    expect(restored.pending([merge]).isEmpty)
+    expect(restored.opened!.pending([opened]).isEmpty)
+    expect(restored.commits!.pending([commit], on: pr, login: "alice").isEmpty)
+    expect(!restored.commits!.needsSnapshot(pr))
+    expectEqual(restored.lastCheck, start.addingTimeInterval(10))
+    expect(try store.load(login: "bob", now: start).recent.isEmpty)
+    // The same preference object reads a newer instance's edits at delivery time.
+    let latest = NotificationPreferences(defaults: defaults)
+    latest.setEnabled(false, for: .merged)
+    expect(!prefs.allows(.merged, repository: "owner/repo"))
+    latest.setEnabled(true, for: .merged)
+    _ = latest.addRepository("owner/repo")
+    expect(!prefs.allows(.merged, repository: "owner/repo"))
+}
+try testNotificationPreferences()
+print("Passed notification defaults/migration/persistence/isolation/validation/exact-match and silent-history/no-replay scenarios.")

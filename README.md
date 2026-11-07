@@ -31,6 +31,10 @@ Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses
 
 Peon mode saves a quiet copy in Notification Center without a second banner. macOS may show a generic app icon there; the real portrait is also attached as a thumbnail. Peon toasts respect notification permission, banner settings, and Show Previews: Never. PR links remain in the menu after a toast disappears.
 
-Mute, pause, and **Open at Login** live in the Peon menu. If banners are missing, check **System Settings → Notifications → Job’s Done** and Focus settings.
+Open **Settings…** from the Peon menu or press **Command-comma**. Changes save immediately and apply to all GitHub accounts on this Mac. Choose alerts for opened PRs, merged PRs, and commits by others. Add an exact **owner/repository** to ignore all three event types for that repository; press Return to add, or Remove to restore alerts. Names are case-insensitive; URLs and wildcards are not accepted.
+
+Filtered events stay in account-specific Recent history and won’t notify later. Paused events catch up when you resume. Manual notification tests bypass event filters, ignored repositories and pause; mute and macOS permission still apply.
+
+Sound and notification style are available in Settings and the Peon menu. Pause and **Open at Login** live in the Peon menu. **macOS Notification Settings…** opens the separate system controls. If banners are missing, check **System Settings → Notifications → Job’s Done** and Focus settings.
 
 <sub>Warcraft artwork and audio belong to Blizzard Entertainment. Sources and credits: [THIRD_PARTY.md](THIRD_PARTY.md).</sub>

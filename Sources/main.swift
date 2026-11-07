@@ -11,7 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var testing = false
     private var menuOpen = false
     private var paused = UserDefaults.standard.bool(forKey: "paused")
-    private var soundEnabled: Bool { !UserDefaults.standard.bool(forKey: "muted") }
+    private let preferences = NotificationPreferences()
+    private var settingsController: NotificationSettingsController?
+    private var soundEnabled: Bool { preferences.soundEnabled }
     private var monitorError: String?
     private var startupError: String?
     private var deliveryWarning: String?
@@ -40,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var helpTestButton: NSButton?
     private var helpMenuButton: NSButton?
     private let peonToasts = PeonToastPresenter()
-    private var usesPeonToasts: Bool { !UserDefaults.standard.bool(forKey: "nativeNotifications") }
+    private var usesPeonToasts: Bool { !preferences.nativeNotifications }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.JobsDone").count > 1 {
@@ -131,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private var soundTitle: String {
-        systemSoundAllowed ? "Play Celebration Sound" : "Play Sound — Disabled in System Settings…"
+        systemSoundAllowed ? "Play Celebration Sound" : "Play Sound — Disabled by macOS"
     }
 
     private func updateIcon() {
@@ -156,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func refreshMenu() {
         guard item != nil else { return }
         if SMAppService.mainApp.status == .enabled { startupError = nil }
+        settingsController?.refresh(systemSoundAllowed: systemSoundAllowed)
         updateIcon()
         helpTestButton?.title = testTitle
         helpTestButton?.isEnabled = !busy && !testing
@@ -174,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             commitTestRow?.title = commitTestTitle
             commitTestRow?.isEnabled = !busy && !testing
             soundRow?.title = soundTitle
-            soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
+            soundRow?.state = soundEnabled ? .on : .off
             return
         }
         menu.removeAllItems()
@@ -202,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         commitTestRow = row(commitTestTitle, #selector(testCommit))
         commitTestRow?.isEnabled = !busy && !testing
         soundRow = row(soundTitle, #selector(toggleSound))
-        soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
+        soundRow?.state = soundEnabled ? .on : .off
         soundRow?.toolTip = "One sound per event type per check, even when several PRs open or merge. macOS notification Sound settings also apply."
         let styles = NSMenu()
         styles.autoenablesItems = false
@@ -247,12 +250,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             entry.toolTip = "\(title)\n\(notice.commit.oid)"
         }
         menu.addItem(.separator())
+        row("Settings…", #selector(showSettings), key: ",")
         row("About / Setup Help…", #selector(showHelp))
         row("Quit Job’s Done", #selector(quit), key: "q")
     }
 
     private var startupTitle: String {
         SMAppService.mainApp.status == .requiresApproval ? "Open at Login — Approve in Settings…" : "Open at Login"
+    }
+
+    @objc private func showSettings() {
+        if settingsController == nil {
+            let controller = NotificationSettingsController(preferences: preferences)
+            controller.onChange = { [weak self] in
+                guard let self else { return }
+                self.peonToasts.dismissAll()
+                self.sound?.stop()
+                self.soundEndsAt = .distantPast
+                self.refreshMenu()
+            }
+            controller.openSystemSettings = { [weak self] in self?.openSystemNotificationSettings() }
+            settingsController = controller
+        }
+        settingsController?.refresh(systemSoundAllowed: systemSoundAllowed)
+        settingsController?.present()
     }
 
     @objc private func checkNow() { check() }
@@ -269,27 +290,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !paused { check() }
     }
     @objc private func toggleSound() {
-        if !systemSoundAllowed { notificationSettings(); return }
-        UserDefaults.standard.set(soundEnabled, forKey: "muted")
+        preferences.soundEnabled.toggle()
         if !soundEnabled { sound?.stop(); soundEndsAt = .distantPast }
         refreshMenu()
     }
     @objc private func chooseNotificationStyle(_ sender: NSMenuItem) {
-        UserDefaults.standard.set(sender.tag == 0, forKey: "nativeNotifications")
+        preferences.nativeNotifications = sender.tag == 0
         peonToasts.dismissAll()
         sound?.stop()
         soundEndsAt = .distantPast
         refreshMenu()
     }
     @objc private func quit() { pollTask?.cancel(); sound?.stop(); peonToasts.dismissAll(); NSApp.terminate(nil) }
+    @objc private func openSystemNotificationSettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+    }
     @objc private func notificationSettings() {
         if notificationState == .notDetermined {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
                 Task { @MainActor in self?.updatePermission() }
             }
-        } else {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
-        }
+        } else { openSystemNotificationSettings() }
     }
     @objc private func toggleStartup() {
         if SMAppService.mainApp.status == .requiresApproval {
@@ -353,6 +374,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let edit = submenu("Edit")
         edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        edit.addItem(.separator())
+        edit.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        edit.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        edit.addItem(NSMenuItem(title: "Undo", action: NSSelectorFromString("undo:"), keyEquivalent: "z"))
+        let redo = NSMenuItem(title: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "Z")
+        edit.addItem(redo)
+        if let appMenu = main.items.first?.submenu {
+            let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+            settings.target = self
+            appMenu.insertItem(settings, at: 0)
+            appMenu.insertItem(.separator(), at: 1)
+        }
         NSApp.mainMenu = main
     }
 
@@ -420,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         testButton.isEnabled = !busy && !testing
         helpTestButton = testButton
         controls.addArrangedSubview(testButton)
-        controls.addArrangedSubview(NSButton(title: "Notification Settings…", target: self, action: #selector(notificationSettings)))
+        controls.addArrangedSubview(NSButton(title: "macOS Notification Settings…", target: self, action: #selector(openSystemNotificationSettings)))
         let stack = NSStackView(views: [header, setup, watching, controlsHelp, notices, controls])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -479,10 +512,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let pending = state.pending(prs)
                 guard !paused, !Task.isCancelled else { return }
                 apply(await UNUserNotificationCenter.current().notificationSettings())
-                if !pendingOpened.isEmpty { await playSound(resource: "WorkWork") }
+                var playedOpenedSound = false
                 for pr in pendingOpened {
                     guard !paused, !Task.isCancelled else { return }
-                    await post(id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true)
+                    if !playedOpenedSound { playedOpenedSound = await playSound(resource: "WorkWork", event: .opened, repository: pr.repository.nameWithOwner) }
+                    guard !paused, !Task.isCancelled else { return }
+                    await post(event: .opened, repository: pr.repository.nameWithOwner, id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true)
                     openedState.record(pr)
                     state.opened = openedState
                     try store.save(state, login: account)
@@ -492,10 +527,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 state.opened = openedState
                 try store.save(state, login: account)
                 guard !paused, !Task.isCancelled else { return }
-                if !pending.isEmpty { await playSound() }
+                var playedMergeSound = false
                 for pr in pending {
                     guard !paused, !Task.isCancelled else { return }
-                    await post(id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url)
+                    if !playedMergeSound { playedMergeSound = await playSound(event: .merged, repository: pr.repository.nameWithOwner) }
+                    guard !paused, !Task.isCancelled else { return }
+                    await post(event: .merged, repository: pr.repository.nameWithOwner, id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url)
                     state.record(pr)
                     try store.save(state, login: account)
                     recent = state.recent
@@ -519,10 +556,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         try store.save(state, login: account)
                         for notice in notices {
                             guard !paused, !Task.isCancelled else { return }
-                            if !playedCommitSound { await playSound(resource: "Hmmm"); playedCommitSound = true }
+                            if !playedCommitSound { playedCommitSound = await playSound(resource: "Hmmm", event: .committed, repository: pr.repository.nameWithOwner) }
                             guard !paused, !Task.isCancelled else { return }
                             let author = notice.commit.author.user!.login
-                            await post(id: "commit-" + notice.id, subtitle: "New commit · \(pr.repository.nameWithOwner) #\(pr.number)", body: "@\(author): \(notice.commit.messageHeadline)", url: pr.url, committed: true)
+                            await post(event: .committed, repository: pr.repository.nameWithOwner, id: "commit-" + notice.id, subtitle: "New commit · \(pr.repository.nameWithOwner) #\(pr.number)", body: "@\(author): \(notice.commit.messageHeadline)", url: pr.url, committed: true)
                             commitsState.record(notice)
                             state.commits = commitsState
                             try store.save(state, login: account)
@@ -548,26 +585,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func playSound(resource: String = "JobsDone") async {
-        guard usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return }
+    @discardableResult
+    private func playSound(resource: String = "JobsDone", event: NotificationEvent? = nil, repository: String = "") async -> Bool {
+        func eligible() -> Bool {
+            event.map { preferences.allows($0, repository: repository) } ?? true
+        }
+        guard eligible(), usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return false }
         let remaining = soundEndsAt.timeIntervalSinceNow
         if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
-        guard !Task.isCancelled, usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return }
+        guard eligible(), !Task.isCancelled, usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return false }
         guard let path = Bundle.main.path(forResource: resource, ofType: "wav"), let clip = NSSound(contentsOfFile: path, byReference: false) else {
             soundWarning = "The celebration sound is missing. Reinstall the app to restore it."
-            return
+            return false
         }
         sound = clip
         if clip.play() {
             soundWarning = nil
             soundEndsAt = Date().addingTimeInterval(clip.duration)
+            return true
         } else {
             soundWarning = "The celebration sound could not start. Check your audio output device, then try the sound test again."
+            return false
         }
     }
 
-    private func post(id: String, subtitle: String, body: String, url: String, opened: Bool = false, committed: Bool = false) async {
-        guard notificationState.canPost else { return }
+    private func post(event: NotificationEvent? = nil, repository: String = "", id: String, subtitle: String, body: String, url: String, opened: Bool = false, committed: Bool = false) async {
+        guard !Task.isCancelled, notificationState.canPost else { return }
+        if let event {
+            guard !paused, preferences.allows(event, repository: repository) else { return }
+        }
         let content = UNMutableNotificationContent()
         content.title = committed ? "Hmmm?" : opened ? "Work Work! ⚒" : "Job’s done! ⚒"
         content.subtitle = subtitle
