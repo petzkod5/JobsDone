@@ -28,8 +28,8 @@ if [[ "${MACOS_SIGNING_ENABLED:-false}" == true ]]; then
   ditto -c -k --keepParent "$APP" "$TEMP_SIGN/notarize.zip"
   xcrun notarytool submit "$TEMP_SIGN/notarize.zip" --key "$TEMP_SIGN/notary.p8" \
     --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" --wait
-  xcrun stapler staple "$APP"
-  xcrun stapler validate "$APP"
+  python3 "$TOOLS_DIR/release-ticket.py" staple "$APP"
+  python3 "$TOOLS_DIR/release-ticket.py" validate "$APP"
 else
   codesign --force --sign - "$APP"
 fi

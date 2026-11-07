@@ -91,5 +91,11 @@ and a valid stapled ticket in this mode. Apple's certificate/API permissions and
 service availability must be validated with a real signed release; no credentials
 are provisioned here.
 
+Ticket stapling and validation retry exit codes 65/68 and command timeouts up to
+three attempts, with 30s and 60s pauses. Each attempt has a 120s timeout. These
+CloudKit operations can fail after notarization is accepted; retrying them does
+not rebuild or resubmit the app. Other errors stop immediately, and exhausted
+retries still fail the release.
+
 References: [Release Please action](https://github.com/googleapis/release-please-action#readme)
 and [manifest configuration](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md).
