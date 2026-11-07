@@ -6,6 +6,8 @@
 
 <!-- List checks you ran and their results. Include real-app screenshots for visible changes. If something was not tested, say what and why. -->
 
+<!-- App: ./scripts/test.sh and ./scripts/build.sh. CI/release tooling: also run the Python checks in CONTRIBUTING.md and exercise affected failure paths. Docs only: check links and commands. Redact private data from evidence. -->
+
 ## Release notes
 
 <!-- Describe any user-facing change or breaking behavior. Write “None” for internal-only work. Release-please determines the version from conventional commits. -->

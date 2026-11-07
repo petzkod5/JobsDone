@@ -4,37 +4,91 @@
 
 <p align="center">A tiny macOS menu bar app for your GitHub PRs.<br>Open one: <b>“Work work.”</b> Merge one: <b>“Job’s done!”</b></p>
 
+[Download](https://github.com/petzkod5/JobsDone/releases/latest) · [Help](SUPPORT.md) · [Contribute](CONTRIBUTING.md) · [Release notes](CHANGELOG.md)
+
+## What it does
+
+- Plays “Work work” when you open a PR and “Job’s done!” when it merges.
+- Plays “Hmmm?” when someone else commits to your PR.
+- Keeps recent PR links in the menu, with pause, mute, and repository filters.
+- Uses your active GitHub CLI account, with separate history for each account.
+
+It monitors **your authored PRs on github.com**, including private repositories,
+every minute while your Mac is awake. Existing PRs stay quiet on first setup.
+
 ## Install
 
-Requires **macOS 13+** and [Homebrew](https://brew.sh).
+Requires **macOS 13+**. Release downloads support **Apple silicon and Intel**.
+
+### Homebrew
 
 ```sh
 brew install --cask petzkod5/tap/jobsdone
 gh auth login --hostname github.com
 ```
 
-Homebrew installs the signed, notarized app and GitHub CLI. Open **Job’s Done** from Applications.
+Open **Job’s Done** from Applications. The cask installs GitHub CLI too.
+This uses the project’s [Homebrew tap](https://github.com/petzkod5/homebrew-tap).
 
-## Set up
+### Download a ZIP
+
+Download `JobsDone-<version>-universal.zip` from the
+[latest release](https://github.com/petzkod5/JobsDone/releases/latest), unzip it,
+and move **Job’s Done.app** to Applications. Install GitHub CLI and sign in:
+
+```sh
+brew install gh
+gh auth login --hostname github.com
+```
+
+Published releases use Developer ID signing and Apple notarization. Local
+source builds are ad-hoc signed. Release ZIPs include a `.sha256` checksum file.
+
+## Get started
 
 1. Click the **Peon** in your menu bar and allow macOS notifications.
-2. Use the sound test options to check your audio and banners.
-3. Leave it running. Click a notification to open the PR.
+2. Use a notification test in the menu to check sound and banners.
+3. Leave it running. Click an alert to open its PR.
 
-It uses your active `github.com` account in GitHub CLI—no token to paste. Public and private PRs **authored by you** are checked every minute while your Mac is awake. Other people’s commits on your authored PRs play “Hmmm?” and link back to the PR. Attribution uses the GitHub commit author (including bots); your own commits and commits without a linked GitHub author stay quiet. Existing open PRs are silently baselined on upgrade. Commit IDs are saved per account to prevent repeats across restart and force-push; PRs changed and closed between checks are included. Use **Test Hmmm? + Notification** and **Recent Commits by Others** in the menu.
+Open **Settings…** with **Command-comma** to choose alert types, ignored
+repositories, and **Peon Toast** or **macOS Notification** style. Pause and
+**Open at Login** are in the Peon menu.
 
-New PRs include drafts; existing PRs stay quiet when monitoring first starts. Missed events catch up after downtime, and merge alerts keep working for existing installs.
+![A Peon toast with an Open Pull Request button](docs/screenshots/peon-toast.png)
 
-**Notification Style** defaults to **Peon Toast**, with the real Warcraft III portrait, an Open Pull Request button, and a dismiss button. Peon toasts may appear during Focus. Choose **macOS Notification** for system banners and system-scheduled Warcraft sounds that follow Focus.
+This is a real app capture from an earlier build. See
+[screenshot notes](docs/screenshots/README.md) for capture details and limits.
+[Usage details](docs/USAGE.md) cover history, filters, Focus, and keyboard access.
 
-Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses the stack. Up to three appear at a time; an overflow count points to additional PR updates in the histories. They do not expire while VoiceOver or Switch Control is active. Help supports Command-C / Command-A for selected text and Command-W to close. For keyboard access to PRs, Command-Shift-M opens the Peon menu from Help; arrow keys and Return open the Recently Opened / Recent Merges / Recent Commits by Others links.
+## Update or uninstall
 
-Peon mode saves a quiet copy in Notification Center without a second banner. macOS may show a generic app icon there; the real portrait is also attached as a thumbnail. Peon toasts respect notification permission, banner settings, and Show Previews: Never. PR links remain in the menu after a toast disappears.
+Quit the app before updating:
 
-Open **Settings…** from the Peon menu or press **Command-comma**. Changes save immediately and apply to all GitHub accounts on this Mac. Choose alerts for opened PRs, merged PRs, and commits by others. Add an exact **owner/repository** to ignore all three event types for that repository; press Return to add, or Remove to restore alerts. Names are case-insensitive; URLs and wildcards are not accepted.
+```sh
+brew update
+brew upgrade --cask petzkod5/tap/jobsdone
+```
 
-Filtered events stay in account-specific Recent history and won’t notify later. Paused events catch up when you resume. Manual notification tests bypass event filters, ignored repositories and pause; mute and macOS permission still apply.
+For ZIP installs, replace the app with the latest download after quitting it.
 
-Sound and notification style are available in Settings and the Peon menu. Pause and **Open at Login** live in the Peon menu. **macOS Notification Settings…** opens the separate system controls. If banners are missing, check **System Settings → Notifications → Job’s Done** and Focus settings.
+To uninstall a Homebrew copy, quit it and run:
 
-<sub>Warcraft artwork and audio belong to Blizzard Entertainment. Sources and credits: [THIRD_PARTY.md](THIRD_PARTY.md).</sub>
+```sh
+brew uninstall --cask jobsdone
+```
+
+For a ZIP copy, quit it and move the app to Trash. Saved history and preferences
+remain on your Mac.
+
+## Contribute
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for local builds and PR checks.
+Bug reports, fixes, and documentation improvements are welcome. Use
+[Issues](https://github.com/petzkod5/JobsDone/issues) for bugs and ideas, or
+[private reporting](SECURITY.md) for vulnerabilities.
+
+## License and credits
+
+Original code and documentation are [MIT licensed](LICENSE). Warcraft artwork
+and audio belong to Blizzard Entertainment and are excluded from that license.
+Sources and credits are in [THIRD_PARTY.md](THIRD_PARTY.md).

@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Job’s Done is not working.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [Help](https://github.com/petzkod5/JobsDone/blob/main/SUPPORT.md) and search existing issues first. Remove private PR details and tokens from anything you attach. Report vulnerabilities through [private reporting](https://github.com/petzkod5/JobsDone/security/advisories/new).
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: The version shown in Setup Help, or your commit SHA for a local build.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac chip
+      placeholder: macOS 15.5, Apple M2
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      options:
+        - Homebrew
+        - GitHub release ZIP
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: What happened?
+      description: Include steps, what you expected, and what happened instead. If intermittent, say how often.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Settings and screenshots
+      description: For alert issues, include notification style, pause/mute state, event filters, and whether a menu test works. Redact private data.

@@ -64,14 +64,16 @@ move/delete tags, so protect `v*` tags against modification/deletion.
 
 ## Signing
 
-Current mode requires no Apple credentials: the app is ad-hoc signed, **not Apple
-Developer ID signed or notarized**. Homebrew installation does not confer Apple
-trust. macOS may block a quarantined download; normal user approval in Privacy &
-Security may be available under local policy. Managed Macs may disallow it. This
-pipeline does not remove quarantine or bypass Gatekeeper.
+Published releases use Developer ID signing and notarization. The repository
+variable `MACOS_SIGNING_ENABLED` is set to `true`; the v1.4.0 release ZIP was
+verified with `codesign --verify --deep --strict` and `xcrun stapler validate`.
+Local builds from `scripts/build.sh` remain ad-hoc signed.
 
-To activate Developer ID signing and notarization, set repository variable
-`MACOS_SIGNING_ENABLED=true` and configure all these secrets:
+If signing is disabled, release packaging uses ad-hoc signing without Apple
+notarization. Homebrew installation does not confer Apple trust. The pipeline
+does not remove quarantine or bypass Gatekeeper.
+
+Developer ID signing requires `MACOS_SIGNING_ENABLED=true` and these secrets:
 
 - `MACOS_CERTIFICATE_BASE64`: base64 PKCS#12 Developer ID Application certificate
   with its private key.

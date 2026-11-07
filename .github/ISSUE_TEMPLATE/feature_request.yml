@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest a change to Job’s Done.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this help you do?
+      description: Describe the situation and any workaround you use today.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested behavior
+      description: How should it work? A short example helps.
+    validations:
+      required: true

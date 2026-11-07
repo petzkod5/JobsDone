@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and troubleshooting
+    url: https://github.com/petzkod5/JobsDone/blob/main/SUPPORT.md
+    about: Check sign-in, notification settings, and common problems.
+  - name: Report a security vulnerability
+    url: https://github.com/petzkod5/JobsDone/security/advisories/new
+    about: Send security details privately to the maintainer.
