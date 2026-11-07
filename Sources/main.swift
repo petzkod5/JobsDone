@@ -408,7 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let setup = section("SIGN IN", "Install GitHub CLI, then run in Terminal:\ngh auth login --hostname github.com", command: "gh auth login --hostname github.com")
         let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs. Checks run every minute and catch up after sleep. Earlier PR events stay silent.")
-        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened or Recent Merges.")
+        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened, Recent Merges, or Recent Commits by Others.")
         let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR links stay in the menu after a toast closes.")
         let controls = NSStackView()
         controls.spacing = 12
@@ -505,11 +505,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 do {
                     var commitsState = state.commits!
                     let commitSince = commitsState.initialized ? commitsState.lastCheck.addingTimeInterval(-172800) : nil
-                    let candidates = try await Task.detached { try GitHub.commitCandidates(login: account, since: commitSince) }.value
+                    let baselineSince = commitsState.startedAt
+                    let candidates = try await Task.detached { try GitHub.commitCandidates(login: account, since: commitSince, baselineSince: baselineSince) }.value
                     var playedCommitSound = false
+                    var commitFailures = 0
                     for pr in candidates where commitsState.needsSnapshot(pr) {
                         guard !paused, !Task.isCancelled else { return }
-                        let commits = try await Task.detached { try GitHub.commits(on: pr) }.value
+                        let commits: [PRCommit]
+                        do { commits = try await Task.detached { try GitHub.commits(on: pr) }.value }
+                        catch { commitFailures += 1; continue }
                         let notices = commitsState.prepare(commits, on: pr, login: account)
                         state.commits = commitsState
                         try store.save(state, login: account)
@@ -529,8 +533,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         try store.save(state, login: account)
                     }
                     guard !paused, !Task.isCancelled else { return }
-                    commitsState.initialized = true
-                    commitsState.lastCheck = started
+                    if commitFailures == 0 {
+                        commitsState.initialized = true
+                        commitsState.lastCheck = started
+                    } else {
+                        failures.append("Commit alerts: \(commitFailures) PR checks failed; other PRs were checked. Failed PRs retry next minute.")
+                    }
                     state.commits = commitsState
                     try store.save(state, login: account)
                 } catch { failures.append("Commit alerts: " + error.localizedDescription) }

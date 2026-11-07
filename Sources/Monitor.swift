@@ -51,15 +51,20 @@ struct CommitState: Codable {
     var lastCheck: Date
     var initialized = false
     var heads: [String: String] = [:]
+    var baselined: Set<String>?
     var seen: [String: Set<String>] = [:]
     var recent: [CommitNotice] = []
 
     func needsSnapshot(_ pr: CommitPR) -> Bool {
-        !initialized || seen[pr.id] == nil || pr.headRefOid == nil || heads[pr.id] != pr.headRefOid
+        !hasBaseline(pr) || seen[pr.id] == nil || pr.headRefOid == nil || heads[pr.id] != pr.headRefOid
+    }
+
+    private func hasBaseline(_ pr: CommitPR) -> Bool {
+        baselined?.contains(pr.id) ?? (heads[pr.id] != nil)
     }
 
     func pending(_ commits: [PRCommit], on pr: CommitPR, login: String) -> [CommitNotice] {
-        guard initialized else { return [] }
+        guard initialized || hasBaseline(pr) else { return [] }
         var known = seen[pr.id] ?? []
         return commits.filter { commit in
             guard known.insert(commit.oid).inserted,
@@ -85,6 +90,8 @@ struct CommitState: Codable {
     }
 
     mutating func snapshot(_ commits: [PRCommit], on pr: CommitPR) {
+        if baselined == nil { baselined = Set(heads.keys) }
+        baselined!.insert(pr.id)
         seen[pr.id, default: []].formUnion(commits.map(\.oid))
         heads[pr.id] = pr.headRefOid
     }
@@ -200,20 +207,27 @@ enum GitHub {
         try search(query: query.replacingOccurrences(of: "mergedAt", with: "createdAt"), search: searchText(login: login, since: since, opened: true))
     }
 
-    static func commitCandidates(login: String, since: Date?) throws -> [CommitPR] {
+    static func commitCandidates(login: String, since: Date?, baselineSince: Date? = nil) throws -> [CommitPR] {
         let fields = "id title url number createdAt headRefOid repository { nameWithOwner }"
         let candidateQuery = query.replacingOccurrences(of: "id title url number mergedAt repository { nameWithOwner }", with: fields)
         let scope = since.map { "updated:>=\(ISO8601DateFormatter().string(from: $0))" } ?? "is:open"
-        return try search(query: candidateQuery, search: "is:pr author:\(login) \(scope) sort:updated-asc")
+        var candidates: [CommitPR] = try search(query: candidateQuery, search: "is:pr author:\(login) \(scope) sort:updated-asc")
+        if since == nil, let baselineSince {
+            let updated: [CommitPR] = try search(query: candidateQuery, search: "is:pr author:\(login) updated:>=\(ISO8601DateFormatter().string(from: baselineSince)) sort:updated-asc")
+            let updatedIDs = Set(updated.map(\.id))
+            candidates.removeAll { updatedIDs.contains($0.id) }
+            candidates += updated
+        }
+        return candidates
     }
 
-    static func commits(on pr: CommitPR) throws -> [PRCommit] {
+    static func commits(on pr: CommitPR, request: ([String]) throws -> Data = GitHub.run) throws -> [PRCommit] {
         let query = """
         query($id: ID!, $cursor: String) {
           node(id: $id) { ... on PullRequest {
-            headRefOid
+            headRefOid baseRefOid headRepository { nameWithOwner }
             commits(first: 100, after: $cursor) {
-              pageInfo { hasNextPage endCursor }
+              totalCount pageInfo { hasNextPage endCursor }
               nodes { commit { oid messageHeadline committedDate author { user { login } } } }
             }
           } }
@@ -224,15 +238,49 @@ enum GitHub {
         var cursor: String?
         var visited = Set<String>()
         var result: [PRCommit] = []
+        var total: Int?
         repeat {
             var args = ["api", "--hostname", "github.com", "graphql", "-f", "query=\(query)", "-f", "id=\(pr.id)"]
             if let cursor { args += ["-f", "cursor=\(cursor)"] }
-            let response = try decoder.decode(CommitResponse.self, from: run(args))
+            let response = try decoder.decode(CommitResponse.self, from: request(args))
             guard response.errors == nil, let node = response.data?.node,
                   node.headRefOid == pr.headRefOid else {
                 throw MonitorError(message: "PR commits changed during the check or GitHub returned an incomplete result. Will retry.")
             }
+            guard total == nil || total == node.commits.totalCount else {
+                throw MonitorError(message: "PR commit count changed during pagination. Will retry.")
+            }
+            total = node.commits.totalCount
             result += node.commits.nodes.map(\.commit)
+            if node.commits.totalCount > 250 || (!node.commits.pageInfo.hasNextPage && Set(result.map(\.oid)).count != node.commits.totalCount) {
+                guard let base = node.baseRefOid, let head = pr.headRefOid, let headRepo = node.headRepository else {
+                    throw MonitorError(message: "GitHub returned incomplete PR commits and the full comparison is unavailable. Will retry.")
+                }
+                let owner = headRepo.nameWithOwner.split(separator: "/")[0]
+                let comparison = "repos/\(pr.repository.nameWithOwner)/compare/\(base)...\(owner):\(head)"
+                var complete: [PRCommit] = []
+                var page = 1
+                repeat {
+                    let data = try request(["api", "--hostname", "github.com", "\(comparison)?per_page=100&page=\(page)"])
+                    let value = try decoder.decode(CompareResponse.self, from: data)
+                    guard value.total_commits == node.commits.totalCount, !value.commits.isEmpty else {
+                        throw MonitorError(message: "GitHub returned an incomplete commit comparison. Will retry.")
+                    }
+                    complete += value.commits.map { $0.value }
+                    guard Set(complete.map(\.oid)).count == complete.count, complete.count <= value.total_commits else {
+                        throw MonitorError(message: "GitHub returned duplicate or inconsistent comparison pages. Will retry.")
+                    }
+                    if complete.count == value.total_commits { break }
+                    page += 1
+                } while true
+                let verified = try decoder.decode(CommitResponse.self, from: request(["api", "--hostname", "github.com", "graphql", "-f", "query=\(query)", "-f", "id=\(pr.id)"]))
+                guard verified.errors == nil, let current = verified.data?.node,
+                      current.headRefOid == head, current.baseRefOid == base,
+                      current.commits.totalCount == complete.count else {
+                    throw MonitorError(message: "PR changed during its full commit comparison. Will retry.")
+                }
+                return complete
+            }
             if !node.commits.pageInfo.hasNextPage { return result }
             guard let next = node.commits.pageInfo.endCursor, visited.insert(next).inserted else {
                 throw MonitorError(message: "GitHub commit pagination failed. Will retry.")
@@ -293,10 +341,33 @@ private struct CommitResponse: Decodable {
     let errors: [APIError]?
     struct APIError: Decodable { let message: String }
     struct Payload: Decodable { let node: Node? }
-    struct Node: Decodable { let headRefOid: String?; let commits: Connection }
-    struct Connection: Decodable { let nodes: [Entry]; let pageInfo: PageInfo }
+    struct Node: Decodable {
+        let headRefOid: String?
+        let baseRefOid: String?
+        let headRepository: MergedPR.Repository?
+        let commits: Connection
+    }
+    struct Connection: Decodable { let totalCount: Int; let nodes: [Entry]; let pageInfo: PageInfo }
     struct Entry: Decodable { let commit: PRCommit }
     struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
+}
+
+private struct CompareResponse: Decodable {
+    let total_commits: Int
+    let commits: [Commit]
+    struct Commit: Decodable {
+        let sha: String
+        let author: PRCommit.Author.User?
+        let commit: Details
+        struct Details: Decodable {
+            let message: String
+            let committer: Timestamp
+            struct Timestamp: Decodable { let date: Date }
+        }
+        var value: PRCommit {
+            PRCommit(oid: sha, messageHeadline: String(commit.message.prefix { $0 != "\n" }), committedDate: commit.committer.date, author: .init(user: author))
+        }
+    }
 }
 
 struct StateStore {
