@@ -135,7 +135,8 @@ MainActor.assumeIsolated {
         catch { fputs("FAIL: compositor capture: \(error)\n", stderr); exit(1) }
         capture.waitUntilExit()
         print("Compositor capture exit: \(capture.terminationStatus)")
-        let fixturePack = SoundPack(id: "fixture", name: "Fixture", directory: evidence)
+        let fixturePack = SoundPack(id: "fixture", name: "Fixture", directory: evidence,
+                                    sounds: ["Fixture.wav"], eventSounds: Dictionary(uniqueKeysWithValues: NotificationEvent.allCases.map { ($0, "Fixture.wav") }))
         let registry = SoundPackRegistry(packs: [config.soundPacks.defaultPack, fixturePack], defaultID: "peon")
         let fixtureSettings = NotificationSettingsController(preferences: NotificationPreferences(defaults: config.defaults, soundPacks: registry))
         let fixturePopup = views(fixtureSettings.window!.contentView!).compactMap { $0 as? NSPopUpButton }
