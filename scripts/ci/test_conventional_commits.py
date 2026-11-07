@@ -42,6 +42,11 @@ class ConventionalCommitsTests(unittest.TestCase):
                 self.assertEqual(len(commits), 270)
                 self.assertEqual(len(failures), 1)
                 self.assertIn(invalid[:12], failures[0])
+                pr["base"]["sha"] = invalid
+                clean_commits, clean_failures = validator.check(pr, head)
+                self.assertEqual(len(clean_commits), 265)
+                self.assertEqual(clean_failures, [])
+                pr["base"]["sha"] = base
                 pr["title"] = "Add releases"
                 self.assertEqual(len(validator.check(pr, head)[1]), 2)
                 with self.assertRaisesRegex(ValueError, "head changed"):
