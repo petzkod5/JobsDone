@@ -29,7 +29,10 @@ configured for this repository; maintainers review and merge passing PRs.
 
 A release starts as a draft with an immediately created tag. The tag must resolve
 to an ancestor of main, and its `version.txt` and manifest must match `vX.Y.Z`.
-The checked out source must be exactly that commit. Packaging builds both arm64
+The app checkout must be exactly that commit. Release tooling comes from the
+reviewed workflow commit on main, in a separate checkout. This allows a tooling
+fix to recover an older draft without moving its tag or changing app source.
+Packaging builds both arm64
 and x86_64 for macOS 13, replaces the native bundled binary, sets both built bundle
 version fields to the semver, and signs the result without editing source plist.
 
@@ -78,7 +81,9 @@ To activate Developer ID signing and notarization, set repository variable
 - `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`: its key and issuer IDs.
 
 Enabled signing fails if any credential is missing. A temporary keychain signs
-with hardened runtime and timestamp, then notarytool submits and waits, and the
+with hardened runtime and timestamp. It imports Apple’s Developer ID G2
+intermediate, registers the temporary keychain for signing, and restores the
+original search list on success or failure. Then notarytool submits and waits, and the
 ticket is stapled before the final ZIP. Archive validation requires Developer ID
 and a valid stapled ticket in this mode. Apple's certificate/API permissions and
 service availability must be validated with a real signed release; no credentials

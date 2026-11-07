@@ -27,6 +27,7 @@ def version(value):
     return tuple(map(int, value.split('.')))
 
 
+scripts = Path(__file__).resolve().parent
 repo = os.environ['GITHUB_REPOSITORY']
 mode = sys.argv[1]
 tag = sys.argv[2]
@@ -74,14 +75,14 @@ if mode == 'publish':
     else:
         if not release['draft']:
             raise SystemExit('Refusing to add ZIP to an already published release')
-        subprocess.run(['bash', 'scripts/release-package.sh'], check=True)
+        subprocess.run(['bash', str(scripts / 'release-package.sh'), str(Path.cwd())], check=True)
         gh('release', 'upload', tag, f'dist/release/{asset}', '--repo', repo)
         gh('release', 'download', tag, '--repo', repo, '--pattern', asset, '--dir', str(folder), '--clobber')
         if hashlib.sha256(archive.read_bytes()).digest() != hashlib.sha256(Path(f'dist/release/{asset}').read_bytes()).digest():
             raise SystemExit('Uploaded ZIP differs from built ZIP')
 else:
     gh('release', 'download', tag, '--repo', repo, '--pattern', asset, '--dir', str(folder), '--clobber')
-subprocess.run(['bash', 'scripts/release-validate.sh', str(archive), v], check=True)
+subprocess.run(['bash', str(scripts / 'release-validate.sh'), str(archive), v], check=True)
 digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 checksum = f'{digest}  {asset}\n'
 if mode == 'publish':
@@ -101,6 +102,6 @@ elif mode == 'cask':
     gh('release', 'download', tag, '--repo', repo, '--pattern', asset + '.sha256', '--dir', str(folder), '--clobber')
     if (folder / (asset + '.sha256')).read_text() != checksum:
         raise SystemExit('Published checksum mismatch')
-    subprocess.run(['python3', 'scripts/release-cask.py', v, digest, repo, sys.argv[3]], check=True)
+    subprocess.run(['python3', str(scripts / 'release-cask.py'), v, digest, repo, sys.argv[3]], check=True)
 else:
     raise SystemExit('Unknown release mode')
