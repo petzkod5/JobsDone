@@ -60,12 +60,11 @@ baselines, or nested configuration. Change the root `.swiftlint.yml` through
 review when the policy needs to change. See [the lint policy](docs/LINTING.md)
 for rule choices and research references.
 
-The `Lint` workflow runs on every PR and push. Its `Swift lint` and
-`Automation lint` checks are required alongside `macos` and `Conventional
-commits`. Swift lint installs the same pinned version and checks all Swift
-files; automation lint checks shell scripts and workflows. Local hooks can be
-skipped by Git; CI is the merge gate. Changes to the policy, runner, hooks,
-and workflows still need review.
+The `Lint` workflow runs one required `Lint` job on every PR and push,
+alongside the required `macos` and `Conventional commits` checks. Separate
+steps check all Swift files, shell scripts, and workflows, then run automation
+and lint failure tests. Local hooks can be skipped by Git; CI is the merge
+gate. Changes to the policy, runner, hooks, and workflows still need review.
 
 ## Find your way around
 
