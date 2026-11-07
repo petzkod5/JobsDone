@@ -1,0 +1,41 @@
+name: Lint
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  automation:
+    name: Automation lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned automation check tools
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/automation-tools"
+          mkdir -p "$TOOLS"
+          cd "$TOOLS"
+          curl --fail --location --silent --show-error https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o actionlint.tar.gz
+          curl --fail --location --silent --show-error https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz -o shellcheck.tar.xz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | sha256sum --check --strict
+          echo '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck.tar.xz' | sha256sum --check --strict
+          tar -xzf actionlint.tar.gz actionlint
+          tar -xJf shellcheck.tar.xz --strip-components=1 shellcheck-v0.11.0/shellcheck
+          echo "$TOOLS" >> "$GITHUB_PATH"
+      - name: Check shell scripts and workflows
+        run: ./scripts/check.sh
+      - name: Test automation check failure detection
+        run: python3 -m unittest discover -s scripts/ci -p 'test_check.py' -v
+  swift:
+    name: Swift lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned SwiftLint
+        run: ./scripts/setup-lint.sh
+      - name: Lint all Swift code
+        run: python3 scripts/lint.py
+      - name: Test automation and lint failure detection
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
