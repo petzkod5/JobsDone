@@ -179,6 +179,7 @@ private final class ToastCard: NSVisualEffectView {
         overflowLabel.isHidden = count == 0
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()

@@ -27,6 +27,7 @@ final class NotificationSettingsController: NSWindowController {
         refresh()
         window.center()
     }
+    @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func present() {

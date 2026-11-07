@@ -1,7 +1,7 @@
 import Foundation
 
-import Testing
 @testable import JobsDone
+import Testing
 
 @MainActor
 private final class PollFixture {

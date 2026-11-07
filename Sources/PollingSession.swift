@@ -87,77 +87,95 @@ final class PollingSession {
             guard !paused(), !Task.isCancelled else { return }
             await prepareDelivery()
             guard !paused(), !Task.isCancelled else { return }
-            var playedOpenedSound = false
-            for pr in pendingOpened {
-                guard !paused(), !Task.isCancelled else { return }
-                if !playedOpenedSound { playedOpenedSound = await playSound("WorkWork", .opened, pr.repository.nameWithOwner) }
-                guard !paused(), !Task.isCancelled else { return }
-                await post(Delivery(event: .opened, repository: pr.repository.nameWithOwner, id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true))
-                openedState.record(pr)
-                state.opened = openedState
-                try store.save(state, login: account)
-                recentOpened = openedState.recent
-            }
-            if case .success = openedResult { openedState.lastCheck = started }
-            state.opened = openedState
-            try store.save(state, login: account)
-            guard !paused(), !Task.isCancelled else { return }
-            var playedMergeSound = false
-            for pr in pending {
-                guard !paused(), !Task.isCancelled else { return }
-                if !playedMergeSound { playedMergeSound = await playSound("JobsDone", .merged, pr.repository.nameWithOwner) }
-                guard !paused(), !Task.isCancelled else { return }
-                await post(Delivery(event: .merged, repository: pr.repository.nameWithOwner, id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url))
-                state.record(pr)
-                try store.save(state, login: account)
-                recent = state.recent
-            }
-            if case .success = mergeResult { state.lastCheck = started }
-            try store.save(state, login: account)
-            do {
-                var commitsState = state.commits!
-                let commitSince = commitsState.initialized ? commitsState.lastCheck.addingTimeInterval(-172800) : nil
-                let baselineSince = commitsState.startedAt
-                let candidates = try await github.candidates(account, commitSince, baselineSince)
-                guard !paused(), !Task.isCancelled else { return }
-                var playedCommitSound = false
-                var commitFailures = 0
-                for pr in candidates where commitsState.needsSnapshot(pr) {
-                    guard !paused(), !Task.isCancelled else { return }
-                    let commits: [PRCommit]
-                    do { commits = try await github.commits(pr) }
-                    catch { commitFailures += 1; continue }
-                    guard !paused(), !Task.isCancelled else { return }
-                    let notices = commitsState.prepare(commits, on: pr, login: account)
-                    state.commits = commitsState
-                    try store.save(state, login: account)
-                    for notice in notices {
-                        guard !paused(), !Task.isCancelled else { return }
-                        if !playedCommitSound { playedCommitSound = await playSound("Hmmm", .committed, pr.repository.nameWithOwner) }
-                        guard !paused(), !Task.isCancelled else { return }
-                        let author = notice.commit.author.user!.login
-                        await post(Delivery(event: .committed, repository: pr.repository.nameWithOwner, id: "commit-" + notice.id, subtitle: "New commit · \(pr.repository.nameWithOwner) #\(pr.number)", body: "@\(author): \(notice.commit.messageHeadline)", url: pr.url, committed: true))
-                        commitsState.record(notice)
-                        state.commits = commitsState
-                        try store.save(state, login: account)
-                        recentCommits = commitsState.recent
-                    }
-                    commitsState.snapshot(commits, on: pr)
-                    state.commits = commitsState
-                    try store.save(state, login: account)
-                }
-                guard !paused(), !Task.isCancelled else { return }
-                if commitFailures == 0 {
-                    commitsState.initialized = true
-                    commitsState.lastCheck = started
-                } else {
-                    failures.append("Commit alerts: \(commitFailures) PR checks failed; other PRs were checked. Failed PRs retry next minute.")
-                }
-                state.commits = commitsState
-                try store.save(state, login: account)
-            } catch { failures.append("Commit alerts: " + error.localizedDescription) }
+            guard try await deliverOpened(pendingOpened, result: openedResult, state: &state,
+                                          openedState: &openedState, account: account, started: started) else { return }
+            guard try await deliverMerged(pending, result: mergeResult, state: &state,
+                                          account: account, started: started) else { return }
+            guard try await checkCommits(state: &state, account: account, started: started,
+                                         failures: &failures) else { return }
             lastCheck = now()
             monitorError = failures.isEmpty ? nil : failures.joined(separator: "\n\n")
         } catch { monitorError = error.localizedDescription }
+    }
+
+    private func deliverOpened(_ pending: [OpenedPR], result: Result<[OpenedPR], Error>, state: inout AccountState, openedState: inout OpenedState, account: String, started: Date) async throws -> Bool {
+        var playedOpenedSound = false
+        for pr in pending {
+            guard !paused(), !Task.isCancelled else { return false }
+            if !playedOpenedSound { playedOpenedSound = await playSound("WorkWork", .opened, pr.repository.nameWithOwner) }
+            guard !paused(), !Task.isCancelled else { return false }
+            await post(Delivery(event: .opened, repository: pr.repository.nameWithOwner, id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true))
+            openedState.record(pr)
+            state.opened = openedState
+            try store.save(state, login: account)
+            recentOpened = openedState.recent
+        }
+        if case .success = result { openedState.lastCheck = started }
+        state.opened = openedState
+        try store.save(state, login: account)
+        return true
+    }
+
+    private func deliverMerged(_ pending: [MergedPR], result: Result<[MergedPR], Error>, state: inout AccountState, account: String, started: Date) async throws -> Bool {
+        guard !paused(), !Task.isCancelled else { return false }
+        var playedMergeSound = false
+        for pr in pending {
+            guard !paused(), !Task.isCancelled else { return false }
+            if !playedMergeSound { playedMergeSound = await playSound("JobsDone", .merged, pr.repository.nameWithOwner) }
+            guard !paused(), !Task.isCancelled else { return false }
+            await post(Delivery(event: .merged, repository: pr.repository.nameWithOwner, id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url))
+            state.record(pr)
+            try store.save(state, login: account)
+            recent = state.recent
+        }
+        if case .success = result { state.lastCheck = started }
+        try store.save(state, login: account)
+        return true
+    }
+
+    private func checkCommits(state: inout AccountState, account: String, started: Date, failures: inout [String]) async throws -> Bool {
+        do {
+            var commitsState = state.commits!
+            let commitSince = commitsState.initialized ? commitsState.lastCheck.addingTimeInterval(-172800) : nil
+            let baselineSince = commitsState.startedAt
+            let candidates = try await github.candidates(account, commitSince, baselineSince)
+            guard !paused(), !Task.isCancelled else { return false }
+            var playedCommitSound = false
+            var commitFailures = 0
+            for pr in candidates where commitsState.needsSnapshot(pr) {
+                guard !paused(), !Task.isCancelled else { return false }
+                let commits: [PRCommit]
+                do { commits = try await github.commits(pr) }
+                catch { commitFailures += 1; continue }
+                guard !paused(), !Task.isCancelled else { return false }
+                let notices = commitsState.prepare(commits, on: pr, login: account)
+                state.commits = commitsState
+                try store.save(state, login: account)
+                for notice in notices {
+                    guard !paused(), !Task.isCancelled else { return false }
+                    if !playedCommitSound { playedCommitSound = await playSound("Hmmm", .committed, pr.repository.nameWithOwner) }
+                    guard !paused(), !Task.isCancelled else { return false }
+                    let author = notice.commit.author.user!.login
+                    await post(Delivery(event: .committed, repository: pr.repository.nameWithOwner, id: "commit-" + notice.id, subtitle: "New commit · \(pr.repository.nameWithOwner) #\(pr.number)", body: "@\(author): \(notice.commit.messageHeadline)", url: pr.url, committed: true))
+                    commitsState.record(notice)
+                    state.commits = commitsState
+                    try store.save(state, login: account)
+                    recentCommits = commitsState.recent
+                }
+                commitsState.snapshot(commits, on: pr)
+                state.commits = commitsState
+                try store.save(state, login: account)
+            }
+            guard !paused(), !Task.isCancelled else { return false }
+            if commitFailures == 0 {
+                commitsState.initialized = true
+                commitsState.lastCheck = started
+            } else {
+                failures.append("Commit alerts: \(commitFailures) PR checks failed; other PRs were checked. Failed PRs retry next minute.")
+            }
+            state.commits = commitsState
+            try store.save(state, login: account)
+        } catch { failures.append("Commit alerts: " + error.localizedDescription) }
+        return true
     }
 }

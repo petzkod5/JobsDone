@@ -48,7 +48,12 @@ MainActor.assumeIsolated {
         let view = window.contentView!
         let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
         view.cacheDisplay(in: view.bounds, to: bitmap)
-        try! bitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("settings-content-view.png"))
+        do {
+            try bitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("settings-content-view.png"))
+        } catch {
+            fputs("FAIL: capture write: \(error)\n", stderr)
+            exit(1)
+        }
         let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         let own = windows.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(ProcessInfo.processInfo.processIdentifier) }
         print("On-screen window records for native harness: \(own.count); visible window number: \(window.windowNumber)")
