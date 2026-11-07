@@ -19,6 +19,77 @@ struct OpenedPR: Codable, Equatable {
     let repository: MergedPR.Repository
 }
 
+struct CommitPR: Codable, Equatable {
+    let id: String
+    let title: String
+    let url: String
+    let number: Int
+    let createdAt: Date
+    let headRefOid: String?
+    let repository: MergedPR.Repository
+}
+
+struct PRCommit: Codable, Equatable {
+    let oid: String
+    let messageHeadline: String
+    let committedDate: Date
+    let author: Author
+    struct Author: Codable, Equatable {
+        let user: User?
+        struct User: Codable, Equatable { let login: String }
+    }
+}
+
+struct CommitNotice: Codable, Equatable {
+    let pr: CommitPR
+    let commit: PRCommit
+    var id: String { pr.id + "-" + commit.oid }
+}
+
+struct CommitState: Codable {
+    var startedAt: Date
+    var lastCheck: Date
+    var initialized = false
+    var heads: [String: String] = [:]
+    var seen: [String: Set<String>] = [:]
+    var recent: [CommitNotice] = []
+
+    func needsSnapshot(_ pr: CommitPR) -> Bool {
+        !initialized || seen[pr.id] == nil || pr.headRefOid == nil || heads[pr.id] != pr.headRefOid
+    }
+
+    func pending(_ commits: [PRCommit], on pr: CommitPR, login: String) -> [CommitNotice] {
+        guard initialized else { return [] }
+        var known = seen[pr.id] ?? []
+        return commits.filter { commit in
+            guard known.insert(commit.oid).inserted,
+                  let author = commit.author.user?.login,
+                  author.caseInsensitiveCompare(login) != .orderedSame else { return false }
+            // A newly discovered PR must not celebrate commits made before it existed.
+            return seen[pr.id] != nil || commit.committedDate > max(startedAt, pr.createdAt)
+        }.map { CommitNotice(pr: pr, commit: $0) }
+    }
+
+    mutating func prepare(_ commits: [PRCommit], on pr: CommitPR, login: String) -> [CommitNotice] {
+        let notices = pending(commits, on: pr, login: login)
+        let waiting = Set(notices.map { $0.commit.oid })
+        seen[pr.id, default: []].formUnion(commits.map(\.oid).filter { !waiting.contains($0) })
+        return notices
+    }
+
+    mutating func record(_ notice: CommitNotice) {
+        seen[notice.pr.id, default: []].insert(notice.commit.oid)
+        recent.removeAll { $0.id == notice.id }
+        recent.insert(notice, at: 0)
+        recent = Array(recent.prefix(10))
+    }
+
+    mutating func snapshot(_ commits: [PRCommit], on pr: CommitPR) {
+        seen[pr.id, default: []].formUnion(commits.map(\.oid))
+        heads[pr.id] = pr.headRefOid
+    }
+}
+
 struct OpenedState: Codable {
     var startedAt: Date
     var lastCheck: Date
@@ -46,6 +117,7 @@ struct AccountState: Codable {
     var delivered: Set<String> = []
     var recent: [MergedPR] = []
     var opened: OpenedState?
+    var commits: CommitState?
 
     func pending(_ prs: [MergedPR]) -> [MergedPR] {
         var seen = delivered
@@ -128,6 +200,47 @@ enum GitHub {
         try search(query: query.replacingOccurrences(of: "mergedAt", with: "createdAt"), search: searchText(login: login, since: since, opened: true))
     }
 
+    static func commitCandidates(login: String, since: Date?) throws -> [CommitPR] {
+        let fields = "id title url number createdAt headRefOid repository { nameWithOwner }"
+        let candidateQuery = query.replacingOccurrences(of: "id title url number mergedAt repository { nameWithOwner }", with: fields)
+        let scope = since.map { "updated:>=\(ISO8601DateFormatter().string(from: $0))" } ?? "is:open"
+        return try search(query: candidateQuery, search: "is:pr author:\(login) \(scope) sort:updated-asc")
+    }
+
+    static func commits(on pr: CommitPR) throws -> [PRCommit] {
+        let query = """
+        query($id: ID!, $cursor: String) {
+          node(id: $id) { ... on PullRequest {
+            headRefOid
+            commits(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes { commit { oid messageHeadline committedDate author { user { login } } } }
+            }
+          } }
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var cursor: String?
+        var visited = Set<String>()
+        var result: [PRCommit] = []
+        repeat {
+            var args = ["api", "--hostname", "github.com", "graphql", "-f", "query=\(query)", "-f", "id=\(pr.id)"]
+            if let cursor { args += ["-f", "cursor=\(cursor)"] }
+            let response = try decoder.decode(CommitResponse.self, from: run(args))
+            guard response.errors == nil, let node = response.data?.node,
+                  node.headRefOid == pr.headRefOid else {
+                throw MonitorError(message: "PR commits changed during the check or GitHub returned an incomplete result. Will retry.")
+            }
+            result += node.commits.nodes.map(\.commit)
+            if !node.commits.pageInfo.hasNextPage { return result }
+            guard let next = node.commits.pageInfo.endCursor, visited.insert(next).inserted else {
+                throw MonitorError(message: "GitHub commit pagination failed. Will retry.")
+            }
+            cursor = next
+        } while true
+    }
+
     static func searchText(login: String, since: Date, opened: Bool) -> String {
         let date = ISO8601DateFormatter().string(from: since)
         return opened
@@ -175,6 +288,17 @@ private struct SearchResponse<PR: Decodable>: Decodable {
     struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
 }
 
+private struct CommitResponse: Decodable {
+    let data: Payload?
+    let errors: [APIError]?
+    struct APIError: Decodable { let message: String }
+    struct Payload: Decodable { let node: Node? }
+    struct Node: Decodable { let headRefOid: String?; let commits: Connection }
+    struct Connection: Decodable { let nodes: [Entry]; let pageInfo: PageInfo }
+    struct Entry: Decodable { let commit: PRCommit }
+    struct PageInfo: Decodable { let hasNextPage: Bool; let endCursor: String? }
+}
+
 struct StateStore {
     let directory: URL
     init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("JobsDone")) {
@@ -183,12 +307,13 @@ struct StateStore {
     func load(login: String, now: Date) throws -> AccountState {
         let file = directory.appendingPathComponent("\(login).json")
         guard FileManager.default.fileExists(atPath: file.path) else {
-            return AccountState(startedAt: now, lastCheck: now, opened: OpenedState(startedAt: now, lastCheck: now))
+            return AccountState(startedAt: now, lastCheck: now, opened: OpenedState(startedAt: now, lastCheck: now), commits: CommitState(startedAt: now, lastCheck: now))
         }
         do {
             var state = try JSONDecoder().decode(AccountState.self, from: Data(contentsOf: file))
             // Opening alerts begin at upgrade; existing merge checkpoints stay intact.
             if state.opened == nil { state.opened = OpenedState(startedAt: now, lastCheck: now) }
+            if state.commits == nil { state.commits = CommitState(startedAt: now, lastCheck: now) }
             return state
         } catch {
             throw MonitorError(message: "Saved PR history could not be read at \(file.path). Quit the app and restore a backup of this file, or move it aside to start watching from a new setup boundary. Moving it aside clears the app’s prior delivery history; old PR events will remain silent. Your existing file has not been changed.")
