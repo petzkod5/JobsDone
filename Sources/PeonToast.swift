@@ -14,8 +14,17 @@ final class PeonToastPresenter {
     }
     private var entries: [Entry] = []
     private var overflowCount = 0
+    private let scheduleTimer: (TimeInterval, @escaping () -> Void) -> Timer
 
-    func show(id: String, title: String, subtitle: String, body: String, open: @escaping () -> Void) {
+    init(scheduleTimer: @escaping (TimeInterval, @escaping () -> Void) -> Timer = { interval, action in
+        let timer = Timer(timeInterval: interval, repeats: false) { _ in action() }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
+    }) {
+        self.scheduleTimer = scheduleTimer
+    }
+
+    func show(id: String, title: String, subtitle: String, body: String, duration: TimeInterval = 8, open: @escaping () -> Void) {
         dismiss(id)
         let panel = ToastPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 136), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Job’s Done — \(subtitle)"
@@ -32,7 +41,7 @@ final class PeonToastPresenter {
         card.onDismiss = { [weak self] in self?.dismiss(id) }
         card.onHover = { [weak self] _ in self?.refreshDismissTimers() }
         panel.contentView = card
-        let entry = Entry(id: id, window: panel, duration: id.hasPrefix("jobsdone-test") ? 20 : 8)
+        let entry = Entry(id: id, window: panel, duration: duration)
         entries.insert(entry, at: 0)
         while entries.count > 3 { dismiss(entries.last!.id); overflowCount += 1 }
         reposition()
@@ -61,7 +70,7 @@ final class PeonToastPresenter {
         entry.timer?.invalidate()
         guard !pointerOverToasts, !NSWorkspace.shared.isVoiceOverEnabled, !NSWorkspace.shared.isSwitchControlEnabled else { return }
         let id = entry.id
-        let timer = Timer(timeInterval: entry.duration, repeats: false) { [weak self] _ in
+        let timer = scheduleTimer(entry.duration) { [weak self] in
             Task { @MainActor in
                 guard !NSWorkspace.shared.isVoiceOverEnabled, !NSWorkspace.shared.isSwitchControlEnabled else { return }
                 guard self?.pointerOverToasts != true else { self?.refreshDismissTimers(); return }
@@ -69,7 +78,6 @@ final class PeonToastPresenter {
             }
         }
         entry.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func dismiss(_ id: String) {

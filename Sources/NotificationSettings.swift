@@ -3,11 +3,15 @@ import AppKit
 @MainActor
 final class NotificationSettingsController: NSWindowController {
     let preferences: NotificationPreferences
+    var onPollingIntervalChange: (() -> Void)?
     var onChange: (() -> Void)?
     var openSystemSettings: (() -> Void)?
     private var eventButtons: [NotificationEvent: NSButton] = [:]
     private let soundButton = NSButton(checkboxWithTitle: "Play celebration sounds", target: nil, action: nil)
     private let style = NSPopUpButton()
+    private let pollingInterval = NSPopUpButton()
+    private let notificationDuration = NSPopUpButton()
+    private let durationHelp = NSTextField(wrappingLabelWithString: "")
     private let soundStatus = NSTextField(wrappingLabelWithString: "")
     private let repositoryField = NSTextField()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
@@ -46,7 +50,14 @@ final class NotificationSettingsController: NSWindowController {
     private func build() {
         guard let window else { return }
         let content = SettingsBackground(frame: window.contentView?.frame ?? .zero)
-        window.contentView = content
+        let viewport = NSScrollView(frame: content.frame)
+        viewport.hasVerticalScroller = true
+        viewport.autohidesScrollers = true
+        viewport.drawsBackground = false
+        viewport.documentView = content
+        window.contentView = viewport
+        content.translatesAutoresizingMaskIntoConstraints = false
+        content.widthAnchor.constraint(equalTo: viewport.contentView.widthAnchor).isActive = true
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -148,9 +159,26 @@ final class NotificationSettingsController: NSWindowController {
         let soundRow = vertical([soundButton, permissionRow], spacing: 3)
         permissionRow.leadingAnchor.constraint(equalTo: soundRow.leadingAnchor, constant: 20).isActive = true
         permissionRow.trailingAnchor.constraint(equalTo: soundRow.trailingAnchor).isActive = true
-        let delivery = vertical([styleRow, separator(), soundRow], spacing: 8)
+        func timingRow(_ title: String, control: NSPopUpButton, values: [TimeInterval], action: Selector) -> NSStackView {
+            control.addItems(withTitles: values.map { "\(Int($0)) seconds" })
+            control.setAccessibilityLabel(title)
+            control.target = self
+            control.action = action
+            control.widthAnchor.constraint(equalToConstant: 210).isActive = true
+            let row = NSStackView(views: [label(title, heading: true), NSView(), control])
+            row.spacing = 12
+            return row
+        }
+        let durationRow = timingRow("Notification duration", control: notificationDuration,
+                                    values: NotificationPreferences.notificationDurations, action: #selector(durationChanged))
+        durationHelp.font = .systemFont(ofSize: 12)
+        durationHelp.textColor = .secondaryLabelColor
+        durationHelp.maximumNumberOfLines = 2
+        let pollingRow = timingRow("GitHub polling interval", control: pollingInterval,
+                                   values: NotificationPreferences.pollingIntervals, action: #selector(pollingChanged))
+        let delivery = vertical([styleRow, durationRow, durationHelp, pollingRow, separator(), soundRow], spacing: 8)
         add(surface(delivery))
-        for row in [styleRow, soundRow] {
+        for row in [styleRow, durationRow, durationHelp, pollingRow, soundRow] {
             row.widthAnchor.constraint(equalTo: delivery.widthAnchor).isActive = true
         }
         stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
@@ -230,7 +258,12 @@ final class NotificationSettingsController: NSWindowController {
         footer.spacing = 12
         add(footer)
         content.layoutSubtreeIfNeeded()
-        window.setContentSize(NSSize(width: 600, height: stack.fittingSize.height + 48))
+        let contentHeight = stack.fittingSize.height + 48
+        content.heightAnchor.constraint(equalToConstant: contentHeight).isActive = true
+        let availableHeight = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        window.setContentSize(NSSize(width: 600, height: min(contentHeight, availableHeight - 60)))
+        content.layoutSubtreeIfNeeded()
+        content.scroll(NSPoint(x: 0, y: 0))
         window.initialFirstResponder = repositoryField
     }
     @objc private func aboutTests() {
@@ -247,6 +280,13 @@ final class NotificationSettingsController: NSWindowController {
         soundButton.state = preferences.soundEnabled ? .on : .off
         soundStatus.stringValue = self.systemSoundAllowed ? "macOS permission and Focus settings also apply." : "Sound is disabled in macOS. Enable it in Notification Settings."
         style.selectItem(at: preferences.nativeNotifications ? 1 : 0)
+        pollingInterval.selectItem(at: NotificationPreferences.pollingIntervals.firstIndex(of: preferences.pollingInterval)!)
+        notificationDuration.selectItem(at: NotificationPreferences.notificationDurations.firstIndex(of: preferences.notificationDuration)!)
+        notificationDuration.isEnabled = !preferences.nativeNotifications
+        durationHelp.stringValue = preferences.nativeNotifications
+            ? "macOS controls notification duration. Switch to Peon Toast to set it here."
+            : "Applies to new Peon Toasts, including tests. Hover pauses dismissal."
+        notificationDuration.setAccessibilityHelp(durationHelp.stringValue)
         let repositories = preferences.ignoredRepositories
         guard displayedRepositories != repositories else { return }
         displayedRepositories = repositories
@@ -285,6 +325,15 @@ final class NotificationSettingsController: NSWindowController {
         guard let value = sender.identifier?.rawValue, let event = NotificationEvent(rawValue: value) else { return }
         preferences.setEnabled(sender.state == .on, for: event)
         changed()
+    }
+    @objc private func pollingChanged() {
+        preferences.pollingInterval = NotificationPreferences.pollingIntervals[pollingInterval.indexOfSelectedItem]
+        refresh()
+        onPollingIntervalChange?()
+    }
+    @objc private func durationChanged() {
+        preferences.notificationDuration = NotificationPreferences.notificationDurations[notificationDuration.indexOfSelectedItem]
+        refresh()
     }
     @objc private func soundChanged() { preferences.soundEnabled = soundButton.state == .on; changed() }
     @objc private func styleChanged() { preferences.nativeNotifications = style.indexOfSelectedItem == 1; changed() }
@@ -331,6 +380,7 @@ private final class SettingsSurface: NSView {
 }
 
 private final class SettingsBackground: NSView {
+    override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         let background = NSColor.windowBackgroundColor.blended(withFraction: 0.04, of: .labelColor) ?? .windowBackgroundColor
         background.setFill()

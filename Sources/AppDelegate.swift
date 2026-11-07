@@ -6,7 +6,7 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate, NSUserInterfaceValidations {
     private var item: NSStatusItem!
     let menu = NSMenu()
-    private var timer: Timer?
+    private(set) var timer: Timer?
     private var busy = false
     private var testing = false
     private var menuOpen = false
@@ -85,9 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } catch { startupError = error.localizedDescription }
         }
         refreshMenu()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.check() }
-        }
+        reschedulePolling()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(woke), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(activated), name: NSApplication.didBecomeActiveNotification, object: nil)
         check()
@@ -205,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return entry
         }
         row("Job’s Done").isEnabled = false
-        row(login.isEmpty ? "Your authored GitHub PRs · every minute" : "@\(login) · authored PRs · every minute").isEnabled = false
+        row(login.isEmpty ? "Your authored GitHub PRs · every \(Int(preferences.pollingInterval)) seconds" : "@\(login) · authored PRs · every \(Int(preferences.pollingInterval)) seconds").isEnabled = false
         statusRow = row(status, #selector(showMonitorError))
         statusRow?.isEnabled = !busy && monitorError != nil
         statusRow?.toolTip = monitorError
@@ -276,9 +274,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SMAppService.mainApp.status == .requiresApproval ? "Open at Login — Approve in Settings…" : "Open at Login"
     }
 
+    func reschedulePolling() {
+        guard !configuration.isolated else { return }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: preferences.pollingInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.check() }
+        }
+    }
+
     @objc func showSettings() {
         if settingsController == nil {
             let controller = NotificationSettingsController(preferences: preferences)
+            controller.onPollingIntervalChange = { [weak self] in
+                self?.reschedulePolling()
+                self?.refreshMenu()
+            }
             controller.onChange = { [weak self] in
                 guard let self else { return }
                 self.peonToasts.dismissAll()
@@ -359,7 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
-    @objc private func showMonitorError() { if let monitorError { alert("Monitoring needs attention", monitorError + "\n\nChecks retry every minute. Use Check Now after correcting the issue. Setup Help explains GitHub sign-in.") } }
+    @objc private func showMonitorError() { if let monitorError { alert("Monitoring needs attention", monitorError + "\n\nChecks retry every \(Int(preferences.pollingInterval)) seconds. Use Check Now after correcting the issue. Setup Help explains GitHub sign-in.") } }
     @objc private func showStartupError() { if let startupError { alert("Open at Login needs attention", startupError + "\n\nUse System Settings → General → Login Items to review Job’s Done.") } }
     @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour PR events are saved in Recently Opened, Recent Merges, and Recent Commits by Others. They will not replay their sound because a banner failed.") } }
     @objc private func showSoundWarning() {
@@ -460,7 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return section
         }
         let setup = section("SIGN IN", "Install GitHub CLI, then run in Terminal:\ngh auth login --hostname github.com", command: "gh auth login --hostname github.com")
-        let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs. Checks run every minute and catch up after sleep. Earlier PR events stay silent.")
+        let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs. Set the GitHub polling interval in Settings. Checks catch up after sleep. Earlier PR events stay silent.")
         let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened, Recent Merges, or Recent Commits by Others.")
         let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR links stay in the menu after a toast closes.")
         let controls = NSStackView()
@@ -560,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             content.interruptionLevel = .passive
             if notificationState == .ready {
                 let preview = ToastPreview(subtitle: subtitle, body: body, previewsEnabled: toastPreviewsEnabled)
-                peonToasts.show(id: id, title: content.title, subtitle: preview.subtitle, body: preview.body) { [weak self] in self?.open(url) }
+                peonToasts.show(id: id, title: content.title, subtitle: preview.subtitle, body: preview.body, duration: preferences.notificationDuration) { [weak self] in self?.open(url) }
             }
         }
         if !usesPeonToasts && soundEnabled && systemSoundAllowed && nativeSoundTypes.insert(committed ? "committed" : opened ? "opened" : "merged").inserted {

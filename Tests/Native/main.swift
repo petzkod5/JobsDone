@@ -37,22 +37,61 @@ MainActor.assumeIsolated {
         let remove = views(window.contentView!).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "owner/repo" }!
         remove.performClick(nil)
         require(NotificationPreferences(defaults: config.defaults).ignoredRepositories.isEmpty, "real remove action saved")
-        let style = controls.compactMap { $0 as? NSPopUpButton }.first!
+        let popups = controls.compactMap { $0 as? NSPopUpButton }
+        let polling = popups.first { $0.accessibilityLabel() == "GitHub polling interval" }!
+        polling.selectItem(at: 3)
+        app.sendAction(polling.action!, to: polling.target, from: polling)
+        require(NotificationPreferences(defaults: config.defaults).pollingInterval == 300, "polling action saved and read back")
+        require(delegate.menu.items.contains { $0.title.contains("every 300 seconds") }, "polling action synchronized menu")
+        let duration = popups.first { $0.accessibilityLabel() == "Notification duration" }!
+        duration.selectItem(at: 3)
+        app.sendAction(duration.action!, to: duration.target, from: duration)
+        require(NotificationPreferences(defaults: config.defaults).notificationDuration == 15, "duration action saved and read back")
+        let style = popups.first { $0.accessibilityLabel() == "Notification style" }!
         style.selectItem(at: 1)
         app.sendAction(style.action!, to: style.target, from: style)
         require(NotificationPreferences(defaults: config.defaults).nativeNotifications, "style action saved and read back")
+        require(!duration.isEnabled, "macOS duration is unavailable")
+        style.selectItem(at: 0)
+        app.sendAction(style.action!, to: style.target, from: style)
+        require(duration.isEnabled && duration.titleOfSelectedItem == "15 seconds", "Peon duration restored")
+        var scheduled: [TimeInterval] = []
+        let presenter = PeonToastPresenter(scheduleTimer: { interval, _ in
+            scheduled.append(interval)
+            return Timer(timeInterval: interval, repeats: false) { _ in }
+        })
+        presenter.show(id: "jobsdone-test-duration", title: "Test", subtitle: "Timing", body: "Fixture", duration: delegate.preferences.notificationDuration, open: {})
+        require(!scheduled.isEmpty && scheduled.allSatisfy { $0 == 15 }, "toast production scheduler uses selected duration for tests")
+        presenter.dismissAll()
         delegate.showSettings()
         require(delegate.settingsController === controller, "settings singleton reused")
         require(delegate.menu.items.contains { $0.title == "Settings…" && $0.keyEquivalent == "," }, "settings menu shortcut retained")
         window.contentView!.layoutSubtreeIfNeeded()
         let view = window.contentView!
-        let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
-        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let viewport = view as! NSScrollView
+        let document = viewport.documentView!
+        print("Viewport: \(viewport.frame), document: \(document.frame), polling: \(polling.frame)")
+        require(document.frame.width > 500 && document.frame.height > 700, "scroll document has full layout")
+        let bitmap = document.bitmapImageRepForCachingDisplay(in: document.bounds)!
+        document.displayIgnoringOpacity(document.bounds, in: NSGraphicsContext(bitmapImageRep: bitmap)!)
         try! bitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("settings-content-view.png"))
         let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         let own = windows.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(ProcessInfo.processInfo.processIdentifier) }
         print("On-screen window records for native harness: \(own.count); visible window number: \(window.windowNumber)")
         print("Capture is an NSView render, not a compositor screenshot.")
+        let originalSize = window.contentView!.frame.size
+        window.setContentSize(NSSize(width: 600, height: 600))
+        window.contentView!.layoutSubtreeIfNeeded()
+        document.scroll(NSPoint(x: 0, y: document.bounds.height - viewport.contentView.bounds.height))
+        require(viewport.documentVisibleRect.maxY >= document.bounds.maxY - 1, "short window can scroll to footer")
+        window.setContentSize(originalSize)
+        document.scroll(.zero)
+        let capture = Process()
+        capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        capture.arguments = ["-x", "-l", String(window.windowNumber), evidence.appendingPathComponent("settings-window.png").path]
+        try! capture.run()
+        capture.waitUntilExit()
+        print("Compositor capture exit: \(capture.terminationStatus)")
         window.close()
         exit(0)
     }
