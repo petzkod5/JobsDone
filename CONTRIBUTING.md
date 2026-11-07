@@ -26,6 +26,12 @@ history; use a separate macOS user account if you need clean test data.
 `scripts/install.sh` copies to `~/Applications` and launches the app, so it is
 not needed for building or testing.
 
+To launch the built app after quitting any installed copy:
+
+```sh
+open "dist/Job’s Done.app"
+```
+
 ## Find your way around
 
 - `Sources/Monitor.swift`: GitHub queries, event detection, account state.

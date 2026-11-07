@@ -22,6 +22,8 @@ Requires **macOS 13+**. Release downloads support **Apple silicon and Intel**.
 
 ### Homebrew
 
+Install [Homebrew](https://brew.sh) first if you do not have it.
+
 ```sh
 brew install --cask petzkod5/tap/jobsdone
 gh auth login --hostname github.com
@@ -34,15 +36,19 @@ This uses the project’s [Homebrew tap](https://github.com/petzkod5/homebrew-ta
 
 Download `JobsDone-<version>-universal.zip` from the
 [latest release](https://github.com/petzkod5/JobsDone/releases/latest), unzip it,
-and move **Job’s Done.app** to Applications. Install GitHub CLI and sign in:
+and move **Job’s Done.app** to Applications. Install GitHub CLI with
+[Homebrew](https://brew.sh) and sign in:
 
 ```sh
 brew install gh
 gh auth login --hostname github.com
 ```
 
+Open **Job’s Done** from Applications.
+
 Published releases use Developer ID signing and Apple notarization. Local
-source builds are ad-hoc signed. Release ZIPs include a `.sha256` checksum file.
+source builds are ad-hoc signed. Each release provides a ZIP and a separate
+`.sha256` checksum download.
 
 ## Get started
 
@@ -85,7 +91,7 @@ remain on your Mac.
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) for local builds and PR checks.
 Bug reports, fixes, and documentation improvements are welcome. Use
 [Issues](https://github.com/petzkod5/JobsDone/issues) for bugs and ideas, or
-[private reporting](SECURITY.md) for vulnerabilities.
+[private reporting](https://github.com/petzkod5/JobsDone/security/advisories/new) for vulnerabilities.
 
 ## License and credits
 
