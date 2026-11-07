@@ -6,11 +6,11 @@ enum NotificationReadiness: Equatable {
     var canPost: Bool { self == .ready || self == .quiet }
     var actionTitle: String {
         switch self {
-        case .checking: return "Notification Settings…"
+        case .checking: return "macOS Notification Settings…"
         case .notDetermined: return "Allow Notifications…"
-        case .denied: return "Notifications Off — Open Settings…"
-        case .quiet: return "Banners Off — Notification Settings…"
-        case .ready: return "Notification Settings…"
+        case .denied: return "Notifications Off — macOS Notification Settings…"
+        case .quiet: return "Banners Off — macOS Notification Settings…"
+        case .ready: return "macOS Notification Settings…"
         }
     }
     var explanation: String {
