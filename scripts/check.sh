@@ -24,4 +24,5 @@ if ((${#SHELL_FILES[@]})); then
 fi
 if ((${#WORKFLOW_FILES[@]})); then
   actionlint "${WORKFLOW_FILES[@]}"
+  python3 scripts/check-runners.py "${WORKFLOW_FILES[@]}"
 fi

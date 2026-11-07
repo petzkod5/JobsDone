@@ -1,6 +1,6 @@
 # Swift type checking
 
-Run `./scripts/typecheck.sh` on macOS with Swift 6 or later and Xcode Command
+Run `./scripts/typecheck.sh` on macOS with Swift 6.2 or later and Xcode Command
 Line Tools. It checks types without running tests, launching the app, or
 executing the asset utilities. Run `./scripts/test.sh` separately for behavior.
 

@@ -8,7 +8,7 @@ permissions:
 jobs:
   typecheck:
     name: Typecheck
-    runs-on: macos-latest
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Type check all Swift entry points
