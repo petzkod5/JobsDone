@@ -41,7 +41,9 @@ struct SoundPackTests {
             #expect(objects.compactMap { $0 as? String }.contains(other.notificationSoundName(for: event)))
         }
         app.preferences.soundEnabled = false
-        await app.post(id: "muted", subtitle: "Fixture", body: "Fixture", url: "https://github.com/o/r/pull/1")
+        let mutedApp = AppDelegate(configuration: config)
+        mutedApp.notificationState = .ready
+        await mutedApp.post(id: "muted", subtitle: "Fixture", body: "Fixture", url: "https://github.com/o/r/pull/1")
         #expect(requests.last?.content.sound == nil)
         suite.set("removed", forKey: "soundPackID")
         #expect(app.preferences.soundPack.id == "peon")
