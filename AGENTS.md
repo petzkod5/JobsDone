@@ -16,7 +16,7 @@ feat!: describe a breaking change
 
 Use a lowercase type from `feat`, `fix`, `perf`, `refactor`, `docs`, `style`, `test`, `build`, `ci`, `chore`, or `revert`. Add an optional scope, then an optional `!`, then `: ` and a short description. Separate any body from the subject with a blank line. Use `!` or a `BREAKING CHANGE:` footer for a breaking change.
 
-- `fix` produces a patch release; `feat` produces a minor release; breaking changes produce a major release. Other types normally do not trigger a release.
+- `fix`, `perf`, and `revert` produce patch releases; `feat` produces a minor release; breaking changes produce a major release. Other types normally do not trigger a release.
 - Do not use `WIP`, `fixup!`, `squash!`, or default merge subjects. Every commit in a PR is checked, not just the title or latest commit.
 - Use the pull request template. Describe the problem, resulting behavior, and checks actually performed. Include real-app evidence for visible changes and state any validation limits.
 - Never rewrite a shared branch or change another contributor's work without coordination.

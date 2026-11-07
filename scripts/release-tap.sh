@@ -8,8 +8,7 @@ umask 077
 printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" > "$TEMP_TAP/key"
 chmod 600 "$TEMP_TAP/key"
 # Trust keys supplied by GitHub's authenticated HTTPS endpoint, never ssh-keyscan.
-curl --fail --silent --show-error --proto '=https' https://api.github.com/meta \
-  | python3 -c 'import json,sys; print("\n".join("github.com " + k for k in json.load(sys.stdin)["ssh_keys"]))' > "$TEMP_TAP/known_hosts"
+gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$TEMP_TAP/known_hosts"
 export GIT_SSH_COMMAND="ssh -i '$TEMP_TAP/key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$TEMP_TAP/known_hosts'"
 git clone --depth 1 git@github.com:petzkod5/homebrew-tap.git "$TEMP_TAP/tap"
 # Regenerate after each fresh fetch so a racing update can never be downgraded.

@@ -21,7 +21,9 @@ workflow. Release PR creation/updates explicitly dispatch `build.yml` at the PR
 head branch and `conventional-commits.yml` on that same branch with the `pr`
 number, so both checks report against the current PR head. Both workflows must
 support dispatch on main before this pipeline is enabled. No PR output means no
-CI dispatch. Branch protection still applies; maintainers review and merge PRs.
+CI dispatch. Protect `main` by requiring a PR and the `Conventional commits` and
+`macos` status checks, including for administrators. These requirements are
+configured for this repository; maintainers review and merge passing PRs.
 
 ## Artifacts and recovery
 
