@@ -42,5 +42,50 @@ class ReleaseIdentityTests(unittest.TestCase):
             self.assertFalse(any("releases/tags/" in arg for call in calls for arg in call))
 
 
+    def test_publish_runs_current_tools_in_the_tagged_source_directory(self):
+        import hashlib
+        repo, sha = "petzkod5/JobsDone", "a" * 40
+        archive_name = "JobsDone-1.2.0-universal.zip"
+        calls = []
+        def fake_output(arguments, **kwargs):
+            args = tuple(arguments)
+            calls.append(args)
+            if args[:3] == ("gh", "release", "view"):
+                return "123"
+            if args == ("gh", "api", f"repos/{repo}/releases/123"):
+                return json.dumps({"tag_name": "v1.2.0", "draft": True, "prerelease": False, "assets": []})
+            if args[:2] == ("git", "fetch") or args[:2] == ("git", "merge-base"):
+                return ""
+            if args[:2] == ("git", "rev-parse") or args[:2] == ("gh", "api"):
+                return sha
+            if args[:2] == ("git", "show"):
+                return "1.2.0" if args[2].endswith(":version.txt") else '{".":"1.2.0"}'
+            if args[:3] == ("gh", "release", "download"):
+                (Path("dist/downloaded") / archive_name).write_bytes(b"archive fixture")
+                return ""
+            if args[:3] in [("gh", "release", "upload"), ("gh", "release", "edit")]:
+                return ""
+            raise AssertionError(args)
+        def fake_run(arguments, **kwargs):
+            args = tuple(arguments)
+            calls.append(args)
+            if args == ("bash", str(SCRIPT.parent / "release-package.sh"), str(Path.cwd())):
+                Path("dist/release").mkdir(parents=True)
+                (Path("dist/release") / archive_name).write_bytes(b"archive fixture")
+            elif args != ("bash", str(SCRIPT.parent / "release-validate.sh"), "dist/downloaded/" + archive_name, "1.2.0"):
+                raise AssertionError(args)
+        previous = Path.cwd()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                os.chdir(directory)
+                with patch.dict(os.environ, GITHUB_REPOSITORY=repo, MACOS_SIGNING_ENABLED="false"), patch.object(sys, "argv", [str(SCRIPT), "publish", "v1.2.0"]), patch("subprocess.check_output", side_effect=fake_output), patch("subprocess.run", side_effect=fake_run):
+                    runpy.run_path(str(SCRIPT), run_name="__main__")
+                self.assertIn(("bash", str(SCRIPT.parent / "release-package.sh"), str(Path(directory).resolve())), calls)
+                checksum = (Path("dist/downloaded") / (archive_name + ".sha256")).read_text()
+                self.assertTrue(checksum.startswith(hashlib.sha256(b"archive fixture").hexdigest()))
+        finally:
+            os.chdir(previous)
+
+
 if __name__ == "__main__":
     unittest.main()

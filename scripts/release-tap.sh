@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 : "${HOMEBREW_TAP_DEPLOY_KEY:?}"
+TOOLS_DIR=$(cd "$(dirname "$0")" && pwd)
 TAG=$1
 TEMP_TAP=$(mktemp -d)
 trap 'rm -rf "$TEMP_TAP"' EXIT
@@ -16,7 +17,7 @@ for ATTEMPT in 1 2 3; do
   echo "Updating Homebrew tap (attempt $ATTEMPT of 3)"
   git -C "$TEMP_TAP/tap" fetch origin main
   git -C "$TEMP_TAP/tap" reset --hard origin/main
-  python3 scripts/release.py cask "$TAG" "$TEMP_TAP/tap/Casks/jobsdone.rb"
+  python3 "$TOOLS_DIR/release.py" cask "$TAG" "$TEMP_TAP/tap/Casks/jobsdone.rb"
   ruby -c "$TEMP_TAP/tap/Casks/jobsdone.rb"
   git -C "$TEMP_TAP/tap" add -- Casks/jobsdone.rb
   if git -C "$TEMP_TAP/tap" diff --cached --quiet; then exit 0; fi
