@@ -3,7 +3,7 @@ import UserNotifications
 import ServiceManagement
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate, NSUserInterfaceValidations {
     private var item: NSStatusItem!
     private let menu = NSMenu()
     private var timer: Timer?
@@ -15,9 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var monitorError: String?
     private var startupError: String?
     private var deliveryWarning: String?
+    private var soundWarning: String?
+    private var soundEndsAt = Date.distantPast
     private var lastCheck: Date?
     private var notificationState = NotificationReadiness.checking
     private var systemSoundAllowed = true
+    private var toastPreviewsEnabled = true
+    private var nativeSoundTypes = Set<String>()
     private var login = ""
     private var recent: [MergedPR] = []
     private var recentOpened: [OpenedPR] = []
@@ -32,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var pollTask: Task<Void, Never>?
     private var helpWindow: NSWindow?
     private var helpTestButton: NSButton?
+    private var helpMenuButton: NSButton?
+    private let peonToasts = PeonToastPresenter()
+    private var usesPeonToasts: Bool { !UserDefaults.standard.bool(forKey: "nativeNotifications") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.JobsDone").count > 1 {
@@ -41,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         menu.autoenablesItems = false
         menu.delegate = self
         item.menu = menu
+        installApplicationMenu()
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.removeDeliveredNotifications(withIdentifiers: ["jobsdone-test", "jobsdone-test-current"])
@@ -94,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         @unknown default: notificationState = .quiet
         }
         systemSoundAllowed = settings.soundSetting != .disabled
+        toastPreviewsEnabled = settings.showPreviewsSetting != .never
         refreshMenu()
     }
 
@@ -109,6 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var testTitle: String {
         testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Sound + Notification" : "Test Notification (Sound Off)")
+    }
+
+    private var workTestTitle: String {
+        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Work Work + Notification" : "Test Opened PR Notification (Sound Off)")
     }
 
     private var soundTitle: String {
@@ -150,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             checkRow?.title = busy ? "Checking…" : "Check Now"
             testRow?.title = testTitle
             testRow?.isEnabled = !busy && !testing
+            workTestRow?.title = workTestTitle
             workTestRow?.isEnabled = !busy && !testing
             soundRow?.title = soundTitle
             soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
@@ -168,17 +182,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         statusRow?.isEnabled = !busy && monitorError != nil
         statusRow?.toolTip = monitorError
         permissionRow = row(notificationState.actionTitle, #selector(notificationSettings))
-        if deliveryWarning != nil { row("Celebration issue — View Details…", #selector(showDeliveryWarning)) }
+        if deliveryWarning != nil { row("Notification issue — View Details…", #selector(showDeliveryWarning)) }
+        if soundWarning != nil { row("Sound issue — View Details…", #selector(showSoundWarning)) }
         menu.addItem(.separator())
         checkRow = row(busy ? "Checking…" : "Check Now", #selector(checkNow), key: "r")
         checkRow?.isEnabled = !busy && !paused && !testing
         testRow = row(testTitle, #selector(test))
         testRow?.isEnabled = !busy && !testing
-        workTestRow = row("Test Work Work + Notification", #selector(testWorkWork))
+        workTestRow = row(workTestTitle, #selector(testWorkWork))
         workTestRow?.isEnabled = !busy && !testing
         soundRow = row(soundTitle, #selector(toggleSound))
         soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
         soundRow?.toolTip = "One sound per event type per check, even when several PRs open or merge. macOS notification Sound settings also apply."
+        let styles = NSMenu()
+        styles.autoenablesItems = false
+        for (title, tag) in [("Peon Toast (Real Portrait)", 1), ("macOS Notification", 0)] {
+            let choice = NSMenuItem(title: title, action: #selector(chooseNotificationStyle(_:)), keyEquivalent: "")
+            choice.target = self
+            choice.tag = tag
+            choice.state = (tag == 1) == usesPeonToasts ? .on : .off
+            styles.addItem(choice)
+        }
+        row("Notification Style").submenu = styles
         row(paused ? "Resume Monitoring" : "Pause Monitoring", #selector(togglePause))
         let startup = row(startupTitle, #selector(toggleStartup))
         startup.state = SMAppService.mainApp.status == .enabled ? .on : (SMAppService.mainApp.status == .requiresApproval ? .mixed : .off)
@@ -213,24 +238,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func checkNow() { check() }
     @objc private func woke() {
         updatePermission()
-        // Give Wi-Fi a moment to reconnect before interpreting a wake check as a failure.
-        Task { try? await Task.sleep(nanoseconds: 12_000_000_000); check() }
+        timer?.fireDate = Date().addingTimeInterval(12)
     }
     @objc private func activated() { updatePermission(); refreshMenu() }
     @objc private func togglePause() {
         paused.toggle()
         UserDefaults.standard.set(paused, forKey: "paused")
-        if paused { sound?.stop() }
+        if paused { sound?.stop(); soundEndsAt = .distantPast; peonToasts.dismissAll() }
         refreshMenu()
         if !paused { check() }
     }
     @objc private func toggleSound() {
         if !systemSoundAllowed { notificationSettings(); return }
         UserDefaults.standard.set(soundEnabled, forKey: "muted")
-        if !soundEnabled { sound?.stop() }
+        if !soundEnabled { sound?.stop(); soundEndsAt = .distantPast }
         refreshMenu()
     }
-    @objc private func quit() { pollTask?.cancel(); sound?.stop(); NSApp.terminate(nil) }
+    @objc private func chooseNotificationStyle(_ sender: NSMenuItem) {
+        UserDefaults.standard.set(sender.tag == 0, forKey: "nativeNotifications")
+        peonToasts.dismissAll()
+        sound?.stop()
+        soundEndsAt = .distantPast
+        refreshMenu()
+    }
+    @objc private func quit() { pollTask?.cancel(); sound?.stop(); peonToasts.dismissAll(); NSApp.terminate(nil) }
     @objc private func notificationSettings() {
         if notificationState == .notDetermined {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
@@ -270,6 +301,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func showMonitorError() { if let monitorError { alert("Monitoring needs attention", monitorError + "\n\nChecks retry every minute. Use Check Now after correcting the issue. Setup Help explains GitHub sign-in.") } }
     @objc private func showStartupError() { if let startupError { alert("Open at Login needs attention", startupError + "\n\nUse System Settings → General → Login Items to review Job’s Done.") } }
     @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour PR events are saved in Recently Opened and Recent Merges. They will not replay their sound because a banner failed.") } }
+    @objc private func showSoundWarning() {
+        if let soundWarning { alert("Celebration sound needs attention", soundWarning) }
+    }
+
+    private func installApplicationMenu() {
+        let main = NSMenu()
+        func submenu(_ title: String) -> NSMenu {
+            let entry = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let child = NSMenu(title: title)
+            entry.submenu = child
+            main.addItem(entry)
+            return child
+        }
+        let application = submenu("Job’s Done")
+        let about = NSMenuItem(title: "About / Setup Help…", action: #selector(showHelp), keyEquivalent: "")
+        about.target = self
+        application.addItem(about)
+        let openMenu = NSMenuItem(title: "Open Peon Menu", action: #selector(openPeonMenu), keyEquivalent: "M")
+        openMenu.keyEquivalentModifierMask = [.command, .shift]
+        openMenu.target = self
+        application.addItem(openMenu)
+        application.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit Job’s Done", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        application.addItem(quit)
+        let file = submenu("File")
+        let close = NSMenuItem(title: "Close", action: #selector(closeActiveWindow), keyEquivalent: "w")
+        close.target = self
+        file.addItem(close)
+        let edit = submenu("Edit")
+        edit.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        edit.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        NSApp.mainMenu = main
+    }
+
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        item.action != #selector(closeActiveWindow) || NSApp.keyWindow != nil
+    }
+
+    @objc private func closeActiveWindow() {
+        if !peonToasts.dismissKeyToast() { NSApp.keyWindow?.performClose(nil) }
+    }
+
+    @objc private func openPeonMenu() {
+        if helpWindow?.isVisible == true, let helpMenuButton { showHelpMenu(helpMenuButton) }
+        else { item.button?.performClick(nil) }
+    }
+
     @objc private func showHelp() {
         if let helpWindow, helpWindow.isVisible {
             helpWindow.makeKeyAndOrderFront(nil)
@@ -277,7 +356,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let startup = SMAppService.mainApp.status == .enabled ? "Open at Login is enabled." : "Open at Login is off or needs approval."
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 580), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Job’s Done — Setup Help"
         window.isReleasedWhenClosed = false
@@ -289,18 +367,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         title.font = .systemFont(ofSize: 20, weight: .semibold)
         let header = NSStackView(views: [icon, title])
         header.spacing = 12
-        let body = NSTextField(wrappingLabelWithString: "Watch your authored PRs across public and private github.com repositories accessible to your active GitHub CLI account.\n\nChecks run every minute while awake. New PRs play “Work Work”; merges play “Job’s done.” Opening alerts start from setup or upgrade, with no historical flood. Missed checks catch up automatically.\n\nSetup: install GitHub CLI and run gh auth login --hostname github.com in Terminal. Allow notifications, then use the test button below. Focus can suppress banners.\n\nPlay Celebration Sound mutes audio without stopping checks. Sound also follows macOS notification Sound settings; catch-up plays one sound per event type per check. Test Work Work from the Peon menu. Pause stops before the next alert; resume catches up.\n\n\(startup) Toggle it in the Peon menu; if approval is needed, the menu opens Login Items settings.\n\nMenu icon: Peon = watching; dim Peon = paused; warning triangle = monitoring needs attention. Click a notification or recent PR entry to open its PR.")
-        body.font = .systemFont(ofSize: 13)
-        body.preferredMaxLayoutWidth = 552
+        func section(_ title: String, _ text: String, command: String? = nil) -> NSStackView {
+            let heading = NSTextField(labelWithString: title)
+            heading.font = .systemFont(ofSize: 12, weight: .semibold)
+            heading.textColor = .secondaryLabelColor
+            let body = NSTextField(wrappingLabelWithString: text)
+            body.font = .systemFont(ofSize: 13)
+            body.isSelectable = true
+            body.preferredMaxLayoutWidth = 552
+            if let command, let range = text.range(of: command) {
+                let attributed = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor])
+                attributed.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular), range: NSRange(range, in: text))
+                body.attributedStringValue = attributed
+            }
+            let section = NSStackView(views: [heading, body])
+            section.orientation = .vertical
+            section.alignment = .leading
+            section.spacing = 4
+            return section
+        }
+        let setup = section("SIGN IN", "Install GitHub CLI, then run in Terminal:\ngh auth login --hostname github.com", command: "gh auth login --hostname github.com")
+        let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged. Checks run every minute and catch up after sleep. Earlier PR events stay silent.")
+        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened or Recent Merges.")
+        let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR links stay in the menu after a toast closes.")
         let controls = NSStackView()
         controls.spacing = 12
-        controls.addArrangedSubview(NSButton(title: "Open Peon Menu", target: self, action: #selector(showHelpMenu(_:))))
+        let menuButton = NSButton(title: "Open Peon Menu", target: self, action: #selector(showHelpMenu(_:)))
+        helpMenuButton = menuButton
+        menuButton.toolTip = "Open Peon Menu (⌘⇧M)"
+        controls.addArrangedSubview(menuButton)
         let testButton = NSButton(title: testTitle, target: self, action: #selector(test))
         testButton.isEnabled = !busy && !testing
         helpTestButton = testButton
         controls.addArrangedSubview(testButton)
         controls.addArrangedSubview(NSButton(title: "Notification Settings…", target: self, action: #selector(notificationSettings)))
-        let stack = NSStackView(views: [header, body, controls])
+        let stack = NSStackView(views: [header, setup, watching, controlsHelp, notices, controls])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 20
@@ -317,12 +418,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func showHelpMenu(_ sender: NSButton) {
         refreshMenu()
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + menu.size.height + 4), in: sender)
+        let belowButton = sender.isFlipped ? sender.bounds.maxY + 4 : sender.bounds.minY - 4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: belowButton), in: sender)
     }
 
     private func check() {
         guard !busy, !paused, !testing else { return }
         busy = true
+        nativeSoundTypes.removeAll()
         refreshMenu()
         pollTask = Task {
             defer { busy = false; refreshMenu(); updatePermission() }
@@ -358,7 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if !pendingOpened.isEmpty { await playSound(resource: "WorkWork") }
                 for pr in pendingOpened {
                     guard !paused, !Task.isCancelled else { return }
-                    await post(id: "opened-" + pr.id, subtitle: "\(pr.repository.nameWithOwner) #\(pr.number) opened", body: pr.title, url: pr.url, opened: true)
+                    await post(id: "opened-" + pr.id, subtitle: "Opened · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url, opened: true)
                     openedState.record(pr)
                     state.opened = openedState
                     try store.save(state, login: account)
@@ -371,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if !pending.isEmpty { await playSound() }
                 for pr in pending {
                     guard !paused, !Task.isCancelled else { return }
-                    await post(id: pr.id, subtitle: "\(pr.repository.nameWithOwner) #\(pr.number) merged", body: pr.title, url: pr.url)
+                    await post(id: pr.id, subtitle: "Merged · \(pr.repository.nameWithOwner) #\(pr.number)", body: pr.title, url: pr.url)
                     state.record(pr)
                     try store.save(state, login: account)
                     recent = state.recent
@@ -385,14 +488,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func playSound(resource: String = "JobsDone") async {
-        guard soundEnabled, systemSoundAllowed, !paused || testing else { return }
+        guard usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return }
+        let remaining = soundEndsAt.timeIntervalSinceNow
+        if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+        guard !Task.isCancelled, usesPeonToasts, notificationState == .ready, soundEnabled, systemSoundAllowed, !paused || testing else { return }
         guard let path = Bundle.main.path(forResource: resource, ofType: "wav"), let clip = NSSound(contentsOfFile: path, byReference: false) else {
-            deliveryWarning = "The celebration sound is missing. Reinstall the app to restore it."
+            soundWarning = "The celebration sound is missing. Reinstall the app to restore it."
             return
         }
         sound = clip
-        clip.play()
-        try? await Task.sleep(nanoseconds: UInt64(max(clip.duration, 0.2) * 1_000_000_000))
+        if clip.play() {
+            soundWarning = nil
+            soundEndsAt = Date().addingTimeInterval(clip.duration)
+        } else {
+            soundWarning = "The celebration sound could not start. Check your audio output device, then try the sound test again."
+        }
     }
 
     private func post(id: String, subtitle: String, body: String, url: String, opened: Bool = false) async {
@@ -403,6 +513,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         content.body = body
         content.categoryIdentifier = opened ? "OPENED_PR" : "MERGED_PR"
         content.userInfo = ["url": url]
+        if usesPeonToasts {
+            content.interruptionLevel = .passive
+            if notificationState == .ready {
+                let preview = ToastPreview(subtitle: subtitle, body: body, previewsEnabled: toastPreviewsEnabled)
+                peonToasts.show(id: id, title: content.title, subtitle: preview.subtitle, body: preview.body) { [weak self] in self?.open(url) }
+            }
+        }
+        if !usesPeonToasts && soundEnabled && systemSoundAllowed && nativeSoundTypes.insert(opened ? "opened" : "merged").inserted {
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: opened ? "WorkWork.wav" : "JobsDone.wav"))
+        }
+        let portrait = try? NotificationPortrait.attachment()
+        if let portrait { content.attachments = [portrait.0] }
+        defer { if let portrait { try? FileManager.default.removeItem(at: portrait.1) } }
         do {
             try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             deliveryWarning = nil
@@ -419,6 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
         testing = true
+        nativeSoundTypes.removeAll()
         refreshMenu()
         Task {
             defer { testing = false; refreshMenu() }
@@ -427,12 +551,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
             await post(id: "jobsdone-test-current", subtitle: opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open your GitHub pull requests.", url: "https://github.com/pulls", opened: opened)
             if notificationState != .ready {
-                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour merges will still appear in Recent Merges. Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications. Focus may also suppress banners.")
+                let history = opened ? "Recently Opened" : "Recent Merges"
+                let focusNote = usesPeonToasts ? "" : " Focus may also suppress macOS banners."
+                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour PR events will still appear in \(history). Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications.\(focusNote)")
             }
         }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .list]) }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let content = notification.request.content
+        guard content.interruptionLevel != .passive else { completionHandler([.list]); return }
+        var options: UNNotificationPresentationOptions = [.banner, .list]
+        if content.sound != nil { options.insert(.sound) }
+        completionHandler(options)
+    }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let value = response.notification.request.content.userInfo["url"] as? String
         Task { @MainActor in
@@ -450,6 +582,7 @@ if CommandLine.arguments.contains("--notification-diagnostics") {
         let tests = delivered.filter { $0.request.identifier.hasPrefix("jobsdone-test") }
         print("App version:", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "unknown")
         print("Bundle:", Bundle.main.bundleURL.path)
+        print("Notification style:", UserDefaults.standard.bool(forKey: "nativeNotifications") ? "macOS" : "Peon toast")
         print("Notification authorization:", settings.authorizationStatus.rawValue, "alert style:", settings.alertStyle.rawValue)
         for notification in tests { print("Delivered test:", notification.request.content.subtitle, "|", notification.request.content.body) }
         exit(0)
