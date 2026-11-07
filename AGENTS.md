@@ -2,6 +2,12 @@
 
 JobsDone is a native Swift macOS menu bar app. Keep changes small and preserve authored-PR monitoring, account isolation, pause/mute behavior, and saved notification history.
 
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and the source map.
+Write documentation in plain, specific language. Use actual commands and menu
+labels, remove repetition, and keep claims tied to source or checks performed.
+Avoid promotional filler, generic best-practice lists, and documents that repeat
+each other. Keep the README focused on installing and using the app.
+
 ## Commits and pull requests
 
 Every commit must use Conventional Commits. This includes intermediate commits, reverts, and release automation commits. PR titles must follow the same format so squash merges remain compatible with release-please:
