@@ -4,3 +4,5 @@ These screenshots show the real installed macOS app, captured during local valid
 - `peon-toast.png`: app-owned toast with the real portrait, Open Pull Request, and dismiss controls.
 
 Native macOS banner pixels, physical speaker playback, and an actual VoiceOver speech session were not verified.
+
+`hmmm-toast.png` shows the real installed app’s commit-notification test with the original Orc Peon sound packaged. This later capture displays the repository-managed preview version 1.2.0.

@@ -15,6 +15,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/PeonPortrait.icns"
 cp .build/release/JobsDone "$APP/Contents/MacOS/JobsDone"
 cp Resources/JobsDone.wav "$APP/Contents/Resources/JobsDone.wav"
+cp Resources/Hmmm.wav "$APP/Contents/Resources/Hmmm.wav"
 cp Resources/WorkWork.wav "$APP/Contents/Resources/WorkWork.wav"
 sips -s format png Resources/Peon.gif --out "$APP/Contents/Resources/PeonPortrait.png" >/dev/null
 cp Resources/MenuBarPeon.png "$APP/Contents/Resources/MenuBarPeon.png"

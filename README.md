@@ -24,11 +24,13 @@ The installer builds the app, copies it to `~/Applications`, and launches it. Qu
 2. Use the sound test options to check your audio and banners.
 3. Leave it running. Click a notification to open the PR.
 
-It uses your active `github.com` account in GitHub CLI—no token to paste. Public and private PRs **authored by you** are checked every minute while your Mac is awake. New PRs include drafts; existing PRs stay quiet when monitoring first starts. Missed events catch up after downtime, and merge alerts keep working for existing installs.
+It uses your active `github.com` account in GitHub CLI—no token to paste. Public and private PRs **authored by you** are checked every minute while your Mac is awake. Other people’s commits on your authored PRs play “Hmmm?” and link back to the PR. Attribution uses the GitHub commit author (including bots); your own commits and commits without a linked GitHub author stay quiet. Existing open PRs are silently baselined on upgrade. Commit IDs are saved per account to prevent repeats across restart and force-push; PRs changed and closed between checks are included. Use **Test Hmmm? + Notification** and **Recent Commits by Others** in the menu.
+
+New PRs include drafts; existing PRs stay quiet when monitoring first starts. Missed events catch up after downtime, and merge alerts keep working for existing installs.
 
 **Notification Style** defaults to **Peon Toast**, with the real Warcraft III portrait, an Open Pull Request button, and a dismiss button. Peon toasts may appear during Focus. Choose **macOS Notification** for system banners and system-scheduled Warcraft sounds that follow Focus.
 
-Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses the stack. Up to three appear at a time; an overflow count points to additional PR updates in the histories. They do not expire while VoiceOver or Switch Control is active. Help supports Command-C / Command-A for selected text and Command-W to close. For keyboard access to PRs, Command-Shift-M opens the Peon menu from Help; arrow keys and Return open the Recently Opened / Recent Merges links.
+Toasts stay for 8 seconds (20 seconds for tests); hovering over any toast pauses the stack. Up to three appear at a time; an overflow count points to additional PR updates in the histories. They do not expire while VoiceOver or Switch Control is active. Help supports Command-C / Command-A for selected text and Command-W to close. For keyboard access to PRs, Command-Shift-M opens the Peon menu from Help; arrow keys and Return open the Recently Opened / Recent Merges / Recent Commits by Others links.
 
 Peon mode saves a quiet copy in Notification Center without a second banner. macOS may show a generic app icon there; the real portrait is also attached as a thumbnail. Peon toasts respect notification permission, banner settings, and Show Previews: Never. PR links remain in the menu after a toast disappears.
 
