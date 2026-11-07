@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/petzkod5/JobsDone/compare/v1.4.0...v1.5.0) (2026-11-07)
+
+
+### Features
+
+* configure notification events and ignored repositories ([28f8a3b](https://github.com/petzkod5/JobsDone/commit/28f8a3bda19cc88209d8ad9e6af71616294df5c2))
+
 ## [1.4.0](https://github.com/petzkod5/JobsDone/compare/v1.3.0...v1.4.0) (2026-11-07)
 
 
