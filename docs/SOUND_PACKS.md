@@ -15,8 +15,9 @@ bundle resource root for native notifications. Use PCM or IMA4 WAV files shorter
 than 30 seconds. Confirm playback with both notification styles before shipping
 a new pack. Missing toast audio reports the existing sound warning.
 
-The selection applies to new playback and notification requests. It does not
-stop a clip that is already playing or change a request already sent to macOS.
+Changing the selection in Settings stops the active clip and dismisses current
+toasts. New playback and notification requests use the selected pack. Requests
+already sent to macOS keep their original sound.
 Mute, pause, event filters, and account history keep their existing behavior.
 No pack download or folder import is provided.
 
