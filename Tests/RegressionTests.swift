@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import JobsDone
+import Testing
 
 final class MonitorTests {
     let start = Date(timeIntervalSince1970: 1_700_000_000)
@@ -132,7 +132,7 @@ final class AdditionalTests {
     expect(!partialBaseline.initialized)
     expect(!partialBaseline.needsSnapshot(pr))
     let advancedPR = CommitPR(id: pr.id, title: pr.title, url: pr.url, number: pr.number, createdAt: pr.createdAt, headRefOid: incoming.oid, repository: pr.repository)
-    var legacyObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(partialBaseline)) as! [String: Any]
+    var legacyObject = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(partialBaseline)) as? [String: Any])
     legacyObject.removeValue(forKey: "baselined")
     let legacyBaseline = try JSONDecoder().decode(CommitState.self, from: JSONSerialization.data(withJSONObject: legacyObject))
     expectEqual(legacyBaseline.pending([old, incoming], on: advancedPR, login: "alice").map { $0.commit.oid }, ["new"])

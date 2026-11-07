@@ -84,13 +84,20 @@ MainActor.assumeIsolated {
         require(delegate.menu.items.contains { $0.title == "Settings…" && $0.keyEquivalent == "," }, "settings menu shortcut retained")
         window.contentView!.layoutSubtreeIfNeeded()
         let view = window.contentView!
-        let viewport = view as! NSScrollView
+        guard let viewport = view as? NSScrollView else {
+            fputs("FAIL: expected scroll viewport\n", stderr); exit(1)
+        }
         let document = viewport.documentView!
         print("Viewport: \(viewport.frame), document: \(document.frame), polling: \(polling.frame)")
         require(document.frame.width > 500 && document.frame.height > 700, "scroll document has full layout")
         let bitmap = document.bitmapImageRepForCachingDisplay(in: document.bounds)!
         document.displayIgnoringOpacity(document.bounds, in: NSGraphicsContext(bitmapImageRep: bitmap)!)
-        try! bitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("settings-content-view.png"))
+        do {
+            try bitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("settings-content-view.png"))
+        } catch {
+            fputs("FAIL: capture write: \(error)\n", stderr)
+            exit(1)
+        }
         let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         let own = windows.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(ProcessInfo.processInfo.processIdentifier) }
         print("On-screen window records for native harness: \(own.count); visible window number: \(window.windowNumber)")
@@ -105,7 +112,8 @@ MainActor.assumeIsolated {
         let capture = Process()
         capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         capture.arguments = ["-x", "-l", String(window.windowNumber), evidence.appendingPathComponent("settings-window.png").path]
-        try! capture.run()
+        do { try capture.run() }
+        catch { fputs("FAIL: compositor capture: \(error)\n", stderr); exit(1) }
         capture.waitUntilExit()
         print("Compositor capture exit: \(capture.terminationStatus)")
         window.close()

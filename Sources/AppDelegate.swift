@@ -1,6 +1,6 @@
 import AppKit
-import UserNotifications
 import ServiceManagement
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate, NSUserInterfaceValidations {

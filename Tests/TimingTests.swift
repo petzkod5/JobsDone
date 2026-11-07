@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import JobsDone
+import Testing
 
 struct TimingTests {
     @Test func preferencesPersistAndRejectUnsupportedValues() {
