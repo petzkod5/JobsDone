@@ -17,6 +17,7 @@ Peon's defaults are:
 | PR merged | `JobsDone.wav` |
 | Other-author commit | `Hmmm.wav` |
 | Issue opened | `SomethingNeedDoing.wav` |
+| Comment by another author | `GetEm.wav` |
 
 The mapping supplies defaults in code; per-event sound selection in Settings
 is future work. The Settings

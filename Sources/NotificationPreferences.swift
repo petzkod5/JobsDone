@@ -1,7 +1,7 @@
 import Foundation
 
 enum NotificationEvent: String, CaseIterable {
-    case opened, merged, committed, issueOpened
+    case opened, merged, committed, issueOpened, commented
 }
 
 /// Installation-wide preferences; account checkpoints remain in StateStore.

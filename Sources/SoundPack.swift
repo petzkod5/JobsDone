@@ -53,8 +53,8 @@ struct SoundPackRegistry {
     static let bundled = SoundPackRegistry(packs: [
         SoundPack(id: "peon", name: "Peon", directory: Bundle.main.bundleURL
             .appendingPathComponent("Contents/Resources/SoundPacks/peon", isDirectory: true),
-                  sounds: ["WorkWork.wav", "JobsDone.wav", "Hmmm.wav", "SomethingNeedDoing.wav"],
+                  sounds: ["WorkWork.wav", "JobsDone.wav", "Hmmm.wav", "SomethingNeedDoing.wav", "GetEm.wav"],
                   eventSounds: [.opened: "WorkWork.wav", .merged: "JobsDone.wav",
-                                .committed: "Hmmm.wav", .issueOpened: "SomethingNeedDoing.wav"])
+                                .committed: "Hmmm.wav", .issueOpened: "SomethingNeedDoing.wav", .commented: "GetEm.wav"])
     ], defaultID: "peon")
 }

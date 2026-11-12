@@ -37,6 +37,10 @@ MainActor.assumeIsolated {
         issueToggle.performClick(nil)
         require(!delegate.preferences.isEnabled(.issueOpened), "issue toggle saves preference")
         issueToggle.performClick(nil)
+        let commentToggle = buttons.first { $0.identifier?.rawValue == "commented" }!
+        commentToggle.performClick(nil)
+        require(!delegate.preferences.isEnabled(.commented), "comment toggle saves preference")
+        commentToggle.performClick(nil)
         let sound = buttons.first { $0.title == "Play celebration sounds" }!
         sound.performClick(nil)
         require(!delegate.preferences.soundEnabled, "real sound action saved")
@@ -96,6 +100,14 @@ MainActor.assumeIsolated {
         } catch {
             fputs("FAIL: issue capture write: \(error)\n", stderr); exit(1)
         }
+        presenter.dismissAll()
+        await delegate.post(event: .commented, repository: "owner/repo", id: "comment-native", subtitle: "New comment · owner/repo #4", body: "@reviewer: Looks good!", url: "https://github.com/owner/repo/pull/4#issuecomment-1")
+        let commentWindow = app.windows.first { $0.title == "Job’s Done — New comment · owner/repo #4" && $0.isVisible }!
+        require(views(commentWindow.contentView!).compactMap { $0 as? NSTextField }.contains { $0.stringValue == "Get ’em!" }, "comment toast has event title")
+        let commentBitmap = commentWindow.contentView!.bitmapImageRepForCachingDisplay(in: commentWindow.contentView!.bounds)!
+        commentWindow.contentView!.displayIgnoringOpacity(commentWindow.contentView!.bounds, in: NSGraphicsContext(bitmapImageRep: commentBitmap)!)
+        do { try commentBitmap.representation(using: .png, properties: [:])!.write(to: evidence.appendingPathComponent("comment-toast-view.png")) }
+        catch { fputs("FAIL: comment capture: \(error)\n", stderr); exit(1) }
         presenter.dismissAll()
         delegate.preferences.notificationDuration = 15
         delegate.showSettings()

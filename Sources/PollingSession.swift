@@ -8,6 +8,8 @@ struct GitHubResponses {
     var candidates: @MainActor (String, Date?, Date) async throws -> [CommitPR]
     var commits: @MainActor (CommitPR) async throws -> [PRCommit]
 
+    var commentCandidates: @MainActor (String, Date) async throws -> [CommentCandidate] = { _, _ in [] }
+    var comments: @MainActor (CommentCandidate, Date) async throws -> [CommentNotice] = { _, _ in [] }
     var issues: @MainActor (String, Date) async throws -> [OpenedIssue]
 
     static let live = GitHubResponses(
@@ -16,6 +18,8 @@ struct GitHubResponses {
         opened: { login, since in try await Task.detached { try GitHub.opened(login: login, since: since) }.value },
         candidates: { login, since, baseline in try await Task.detached { try GitHub.commitCandidates(login: login, since: since, baselineSince: baseline) }.value },
         commits: { pr in try await Task.detached { try GitHub.commits(on: pr) }.value },
+        commentCandidates: { login, since in try await Task.detached { try GitHub.commentCandidates(login: login, since: since) }.value },
+        comments: { candidate, since in try await Task.detached { try GitHub.comments(on: candidate, since: since) }.value },
         issues: { login, since in try await Task.detached { try GitHub.issues(login: login, since: since) }.value })
 }
 
@@ -45,6 +49,7 @@ final class PollingSession {
     var recentIssues: [OpenedIssue] = []
     var recentOpened: [OpenedPR] = []
     var recentCommits: [CommitNotice] = []
+    var recentComments: [CommentNotice] = []
     var lastCheck: Date?
     var monitorError: String?
 
@@ -63,7 +68,7 @@ final class PollingSession {
             let started = now()
             let account = try await github.login()
             guard !paused(), !Task.isCancelled else { return }
-            if login != account { recent = []; recentIssues = []; recentOpened = []; recentCommits = [] }
+            if login != account { recent = []; recentIssues = []; recentOpened = []; recentCommits = []; recentComments = [] }
             login = account
             var state = try store.load(login: account, now: started)
             try store.save(state, login: account)
@@ -71,6 +76,7 @@ final class PollingSession {
             recent = state.recent
             recentOpened = state.opened?.recent ?? []
             recentCommits = state.commits?.recent ?? []
+            recentComments = state.comments?.recent ?? []
             let since = max(state.startedAt, state.lastCheck.addingTimeInterval(-172800))
             let mergeResult = await result { try await self.github.merged(account, since) }
             var openedState = state.opened!
@@ -99,6 +105,7 @@ final class PollingSession {
                                           account: account, started: started) else { return }
             guard try await checkCommits(state: &state, account: account, started: started,
                                          failures: &failures) else { return }
+            guard try await checkComments(state: &state, account: account, started: started, failures: &failures) else { return }
             lastCheck = now()
             monitorError = failures.isEmpty ? nil : failures.joined(separator: "\n\n")
         } catch { monitorError = error.localizedDescription }
@@ -162,6 +169,55 @@ final class PollingSession {
             recent = state.recent
         }
         if case .success = result { state.lastCheck = started }
+        try store.save(state, login: account)
+        return true
+    }
+
+    private func checkComments(state: inout AccountState, account: String, started: Date, failures: inout [String]) async throws -> Bool {
+        guard !paused(), !Task.isCancelled else { return false }
+        var commentsState = state.comments!
+        let since = max(commentsState.startedAt, commentsState.lastCheck.addingTimeInterval(-172800))
+        let candidates: [CommentCandidate]
+        do { candidates = try await github.commentCandidates(account, since) }
+        catch {
+            if Task.isCancelled { return false }
+            failures.append("Comment alerts: " + error.localizedDescription)
+            return true
+        }
+        guard !paused(), !Task.isCancelled else { return false }
+        var playedSound = false
+        var failedPRs = 0
+        for candidate in candidates where commentsState.needsCheck(candidate) {
+            guard !paused(), !Task.isCancelled else { return false }
+            let comments: [CommentNotice]
+            do { comments = try await github.comments(candidate, since) }
+            catch {
+                if Task.isCancelled { return false }
+                failedPRs += 1
+                continue
+            }
+            guard !paused(), !Task.isCancelled else { return false }
+            for notice in commentsState.pending(comments, login: account) {
+                guard !paused(), !Task.isCancelled else { return false }
+                let repository = notice.pr.repository.nameWithOwner
+                if !playedSound { playedSound = await playSound(.commented, repository) }
+                guard !paused(), !Task.isCancelled else { return false }
+                await post(Delivery(event: .commented, repository: repository, id: "comment-" + notice.id,
+                                    subtitle: "New comment · \(repository) #\(notice.pr.number)",
+                                    body: "@\(notice.author): \(notice.body)", url: notice.url))
+                commentsState.record(notice)
+                state.comments = commentsState
+                try store.save(state, login: account)
+                recentComments = commentsState.recent
+            }
+            commentsState.snapshot(candidate, at: started)
+            state.comments = commentsState
+            try store.save(state, login: account)
+        }
+        guard !paused(), !Task.isCancelled else { return false }
+        if failedPRs == 0 { commentsState.lastCheck = started }
+        else { failures.append("Comment alerts: \(failedPRs) PR checks failed; other PRs were checked. Failed PRs retry on the next check.") }
+        state.comments = commentsState
         try store.save(state, login: account)
         return true
     }

@@ -121,7 +121,8 @@ final class NotificationSettingsController: NSWindowController {
             (NotificationEvent.opened, "PR opened", "“Work Work” when you open a PR, including drafts."),
             (.issueOpened, "Issues opened in your repositories", "“Something need doing?” when anyone opens an issue in a repository you own."),
             (.merged, "PR merged", "“Job’s done” when your PR merges."),
-            (.committed, "Commits by others on your PRs", "“Hmmm?” for other linked GitHub authors, including bots.")
+            (.committed, "Commits by others on your PRs", "“Hmmm?” for other linked GitHub authors, including bots."),
+            (.commented, "Comments by others on your PRs", "“Get ’em!” for conversation comments, inline comments, and review messages.")
         ] {
             let button = NSButton(checkboxWithTitle: title, target: self, action: #selector(eventChanged(_:)))
             button.font = .systemFont(ofSize: 13)
