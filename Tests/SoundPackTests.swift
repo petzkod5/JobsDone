@@ -11,7 +11,7 @@ struct SoundPackTests {
                              sounds: ["Default.wav"], eventSounds: Dictionary(uniqueKeysWithValues: NotificationEvent.allCases.map { ($0, "Default.wav") }))
         let other = SoundPack(id: "other", name: "Other", directory: root.appendingPathComponent("other"),
                               sounds: ["Hello.wav", "Done.wav", "Unused.wav"],
-                              eventSounds: [.opened: "Hello.wav", .merged: "Done.wav", .committed: "Hello.wav", .issueOpened: "Done.wav"])
+                              eventSounds: [.opened: "Hello.wav", .merged: "Done.wav", .committed: "Hello.wav", .issueOpened: "Done.wav", .commented: "Hello.wav"])
         let registry = SoundPackRegistry(packs: [peon, other], defaultID: "peon")
         var config = AppConfiguration.isolated(directory: root)
         let suite = config.defaults
@@ -29,14 +29,14 @@ struct SoundPackTests {
         for event in NotificationEvent.allCases {
             #expect(await app.playSound(event: event, repository: "o/r"))
         }
-        #expect(files == ["Hello.wav", "Done.wav", "Hello.wav", "Done.wav"].map { root.appendingPathComponent("other/" + $0) })
+        #expect(files == ["Hello.wav", "Done.wav", "Hello.wav", "Done.wav", "Hello.wav"].map { root.appendingPathComponent("other/" + $0) })
         app.preferences.nativeNotifications = true
         for event in NotificationEvent.allCases {
             await app.post(event: event, repository: "o/r", id: event.rawValue, subtitle: "Fixture", body: "Fixture",
                            url: "https://github.com/o/r/pull/1", issueOpened: event == .issueOpened, opened: event == .opened, committed: event == .committed)
         }
         #expect(requests.count == NotificationEvent.allCases.count)
-        let nativeNames = ["other-Hello.wav", "other-Done.wav", "other-Hello.wav", "other-Done.wav"]
+        let nativeNames = ["other-Hello.wav", "other-Done.wav", "other-Hello.wav", "other-Done.wav", "other-Hello.wav"]
         for (request, name) in zip(requests, nativeNames) {
             let sound = try #require(request.content.sound)
             let data = try NSKeyedArchiver.archivedData(withRootObject: sound, requiringSecureCoding: true)
@@ -61,7 +61,7 @@ struct SoundPackTests {
             .appendingPathComponent("Resources/SoundPacks/peon")
         let pack = SoundPackRegistry.bundled.defaultPack
         #expect(NotificationEvent.allCases.map { pack.fileURL(for: $0).lastPathComponent }
-                == ["WorkWork.wav", "JobsDone.wav", "Hmmm.wav", "SomethingNeedDoing.wav"])
+                == ["WorkWork.wav", "JobsDone.wav", "Hmmm.wav", "SomethingNeedDoing.wav", "GetEm.wav"])
         for event in NotificationEvent.allCases {
             let clip = try #require(NSSound(contentsOf: folder.appendingPathComponent(pack.fileURL(for: event).lastPathComponent), byReference: false))
             #expect(clip.duration > 0 && clip.duration < 30)

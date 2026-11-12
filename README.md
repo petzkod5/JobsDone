@@ -13,6 +13,8 @@ A tiny Mac menu bar app that makes Warcraft noises at your GitHub PRs and issues
 
 Open one: **“Work work.”** Merge one: **“Job’s done!”**
 Someone else commits to it: **“Hmmm?”**
+
+Someone else comments on it: **“Get ’em!”** Conversation comments, inline comments, and review messages each link to the comment.
 An issue opens in a repository you own: **“Something need doing?”**
 
 You hear about your PRs the moment they change, without keeping a GitHub tab

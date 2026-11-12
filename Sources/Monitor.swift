@@ -156,6 +156,7 @@ struct AccountState: Codable {
     var issues: IssueState?
     var opened: OpenedState?
     var commits: CommitState?
+    var comments: CommentState?
 
     func pending(_ prs: [MergedPR]) -> [MergedPR] {
         var seen = delivered
@@ -334,7 +335,7 @@ enum GitHub {
             : "is:pr is:merged author:\(login) merged:>=\(date) sort:updated-asc"
     }
 
-    private static func search<PR: Decodable>(query: String, search: String, request: ([String]) throws -> Data = GitHub.run) throws -> [PR] {
+    static func search<PR: Decodable>(query: String, search: String, request: ([String]) throws -> Data = GitHub.run) throws -> [PR] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var cursor: String?
@@ -416,13 +417,14 @@ struct StateStore {
     func load(login: String, now: Date) throws -> AccountState {
         let file = directory.appendingPathComponent("\(login).json")
         guard FileManager.default.fileExists(atPath: file.path) else {
-            return AccountState(startedAt: now, lastCheck: now, issues: IssueState(startedAt: now, lastCheck: now), opened: OpenedState(startedAt: now, lastCheck: now), commits: CommitState(startedAt: now, lastCheck: now))
+            return AccountState(startedAt: now, lastCheck: now, issues: IssueState(startedAt: now, lastCheck: now), opened: OpenedState(startedAt: now, lastCheck: now), commits: CommitState(startedAt: now, lastCheck: now), comments: CommentState(startedAt: now, lastCheck: now))
         }
         do {
             var state = try JSONDecoder().decode(AccountState.self, from: Data(contentsOf: file))
             // Opening alerts begin at upgrade; existing merge checkpoints stay intact.
             if state.issues == nil { state.issues = IssueState(startedAt: now, lastCheck: now) }
             if state.opened == nil { state.opened = OpenedState(startedAt: now, lastCheck: now) }
+            if state.comments == nil { state.comments = CommentState(startedAt: now, lastCheck: now) }
             if state.commits == nil { state.commits = CommitState(startedAt: now, lastCheck: now) }
             return state
         } catch {

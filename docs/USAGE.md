@@ -18,6 +18,11 @@ linked author stay quiet. PRs changed and closed between checks are included.
 Existing open PRs are silently baselined when upgrading to commit alerts.
 Saved commit IDs prevent repeats across restart and force-push.
 
+Other people’s comments on your PRs play “Get ’em!”. This includes conversation
+comments, inline review comments, and review messages. Your own comments stay
+quiet. **Recent Comments by Others** links directly to each comment. Existing
+comments stay silent on first launch or upgrade; saved IDs prevent repeats.
+
 New issues play “Something need doing?” and appear under **Recent Issues**.
 Existing issues stay silent on first launch or upgrade. Issues closed between
 checks are included. Saved issue IDs prevent repeat alerts after restart.
@@ -44,7 +49,7 @@ histories. Toasts do not expire while VoiceOver or Switch Control is active.
 
 Open **Settings…** with **Command-comma**. Changes save immediately and apply
 to all GitHub accounts on this Mac. Choose alerts for opened PRs, merged PRs,
-commits by others, and issues opened in your repositories.
+commits and comments by others, and issues opened in your repositories.
 
 To ignore a repository, enter its exact **owner/repository** and press Return.
 Names are case-insensitive. URLs and wildcards are not accepted. Use Remove
@@ -60,6 +65,6 @@ apply. Pause and **Open at Login** are in the Peon menu.
 In Help, **Command-C** copies selected text, **Command-A** selects all, and
 **Command-W** closes the window. **Command-Shift-M** opens the Peon menu from
 Help. Use arrow keys and Return to open links under **Recently Opened**,
-**Recent Merges**, **Recent Commits by Others**, or **Recent Issues**.
+**Recent Merges**, **Recent Commits by Others**, **Recent Comments by Others**, or **Recent Issues**.
 
 For sign-in or notification problems, see [Help](../SUPPORT.md).
