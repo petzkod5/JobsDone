@@ -6,30 +6,33 @@ final class NotificationSettingsController: NSWindowController {
     var onPollingIntervalChange: (() -> Void)?
     var onChange: (() -> Void)?
     var openSystemSettings: (() -> Void)?
-    private var eventButtons: [NotificationEvent: NSButton] = [:]
-    private let soundButton = NSButton(checkboxWithTitle: "Play celebration sounds", target: nil, action: nil)
+    private var eventSwitches: [NotificationEvent: NSSwitch] = [:]
+    private let soundSwitch = NSSwitch()
     private let soundPack = NSPopUpButton()
     private let style = NSPopUpButton()
     private let pollingInterval = NSPopUpButton()
     private let notificationDuration = NSPopUpButton()
-    private let durationHelp = NSTextField(wrappingLabelWithString: "")
-    private let soundStatus = NSTextField(wrappingLabelWithString: "")
+    private let durationHelp = FormText.detail("")
+    private let soundStatus = FormText.detail("")
     private let repositoryField = NSTextField()
-    private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private let entries = RepositoryEntriesView()
-    private let repositoryCount = NSTextField(labelWithString: "")
-    private let emptyState = NSView()
+    private let errorLabel = FormText.detail("")
+    private let repositoryCount = FormText.detail("")
+    private let repositoryGroup = FormGroup()
+    private let emptyRepositories = FormRow()
+    private var repositoryRows: [FormRow] = []
+    private let formView = SettingsBackground()
     private var systemSoundAllowed = true
     private var displayedRepositories: [String]?
 
     init(preferences: NotificationPreferences) {
         self.preferences = preferences
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 760), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Form.width, height: 720), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Job’s Done Settings"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         build()
         refresh()
+        fitWindowToContent()
         window.center()
     }
     @available(*, unavailable)
@@ -40,243 +43,182 @@ final class NotificationSettingsController: NSWindowController {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-        window?.makeFirstResponder(repositoryField)
-        (repositoryField.currentEditor() as? NSTextView)?.allowsUndo = true
     }
-    private func label(_ text: String, heading: Bool = false) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: heading ? 13 : 12, weight: heading ? .semibold : .regular)
-        label.textColor = heading ? .labelColor : .secondaryLabelColor
-        return label
-    }
+
+    // MARK: - Layout
+
     private func build() {
         guard let window else { return }
-        let content = SettingsBackground(frame: window.contentView?.frame ?? .zero)
-        let viewport = NSScrollView(frame: content.frame)
+        let viewport = NSScrollView(frame: NSRect(x: 0, y: 0, width: Form.width, height: 720))
         viewport.hasVerticalScroller = true
         viewport.autohidesScrollers = true
         viewport.drawsBackground = false
-        viewport.documentView = content
+        viewport.documentView = formView
         window.contentView = viewport
-        content.translatesAutoresizingMaskIntoConstraints = false
-        content.widthAnchor.constraint(equalTo: viewport.contentView.widthAnchor).isActive = true
+        formView.translatesAutoresizingMaskIntoConstraints = false
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
+        stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
+        formView.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24)
+            formView.widthAnchor.constraint(equalTo: viewport.contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: formView.leadingAnchor, constant: Form.margin),
+            stack.trailingAnchor.constraint(equalTo: formView.trailingAnchor, constant: -Form.margin),
+            stack.topAnchor.constraint(equalTo: formView.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: formView.bottomAnchor, constant: -20)
         ])
-        func add(_ view: NSView) {
+        for view in [header(), eventsSection(), alertsSection(), githubSection(), repositoriesSection(), footer()] {
             stack.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
-        func vertical(_ views: [NSView], spacing: CGFloat) -> NSStackView {
-            let group = NSStackView(views: views)
-            group.orientation = .vertical
-            group.alignment = .leading
-            group.spacing = spacing
-            return group
-        }
-        func surface(_ group: NSStackView) -> NSView {
-            let box = SettingsSurface()
-            let interior = box
-            group.translatesAutoresizingMaskIntoConstraints = false
-            interior.addSubview(group)
-            NSLayoutConstraint.activate([
-                group.leadingAnchor.constraint(equalTo: interior.leadingAnchor, constant: 16),
-                group.trailingAnchor.constraint(equalTo: interior.trailingAnchor, constant: -16),
-                group.topAnchor.constraint(equalTo: interior.topAnchor, constant: 14),
-                group.bottomAnchor.constraint(equalTo: interior.bottomAnchor, constant: -14)
-            ])
-            return box
-        }
-        func separator() -> NSBox {
-            let line = NSBox()
-            line.boxType = .separator
-            return line
-        }
-        let title = label("Notifications", heading: true)
-        title.font = .systemFont(ofSize: 20, weight: .semibold)
-        let titleBlock = vertical([title, label("For all GitHub accounts on this Mac")], spacing: 4)
-        let header = NSStackView(views: [titleBlock])
-        header.spacing = 12
+    }
+
+    private func header() -> NSView {
+        let title = FormText.label("Job’s Done", size: 17, weight: .semibold)
+        let subtitle = FormText.detail("These settings apply to every GitHub account on this Mac.")
+        subtitle.font = .systemFont(ofSize: 12)
+        let copy = NSStackView(views: [title, subtitle])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 2
+        let row = NSStackView(views: [copy])
+        row.spacing = 12
+        row.alignment = .centerY
         if let path = Bundle.main.path(forResource: "PeonPortrait", ofType: "png"), let image = NSImage(contentsOfFile: path) {
-            let portrait = NSImageView(image: image)
-            portrait.imageScaling = .scaleProportionallyUpOrDown
-            portrait.setAccessibilityElement(false)
-            portrait.widthAnchor.constraint(equalToConstant: 36).isActive = true
-            portrait.heightAnchor.constraint(equalToConstant: 36).isActive = true
-            header.insertArrangedSubview(portrait, at: 0)
+            let portrait = PortraitView(image: image)
+            portrait.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            portrait.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            row.insertArrangedSubview(portrait, at: 0)
         }
-        add(header)
-        stack.setCustomSpacing(24, after: stack.arrangedSubviews.last!)
-        add(label("Notify me about", heading: true))
-        var eventRows: [NSView] = []
+        return row
+    }
+
+    private func eventsSection() -> NSView {
+        let group = FormGroup()
         for (event, title, detail) in [
             (NotificationEvent.opened, "PR opened", "“Work Work” when you open a PR, including drafts."),
-            (.issueOpened, "Issues opened in your repositories", "“Something need doing?” when anyone opens an issue in a repository you own."),
             (.merged, "PR merged", "“Job’s done” when your PR merges."),
-            (.committed, "Commits by others on your PRs", "“Hmmm?” for other linked GitHub authors, including bots."),
-            (.commented, "Comments by others on your PRs", "“Get ’em!” for conversation comments, inline comments, and review messages.")
+            (.committed, "Commits by others", "“Hmmm?” for commits by other authors, including bots."),
+            (.commented, "Comments by others", "“Get ’em!” for conversation, inline, and review comments."),
+            (.issueOpened, "Issues in your repositories", "“Something need doing?” when anyone opens an issue.")
         ] {
-            let button = NSButton(checkboxWithTitle: title, target: self, action: #selector(eventChanged(_:)))
-            button.font = .systemFont(ofSize: 13)
-            button.identifier = NSUserInterfaceItemIdentifier(event.rawValue)
-            button.setAccessibilityHelp(detail)
-            eventButtons[event] = button
-            let detailLabel = label(detail)
-            let row = vertical([button, detailLabel], spacing: 3)
-            detailLabel.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 20).isActive = true
-            eventRows.append(row)
+            let toggle = NSSwitch()
+            toggle.controlSize = .mini
+            toggle.target = self
+            toggle.action = #selector(eventChanged(_:))
+            toggle.identifier = NSUserInterfaceItemIdentifier(event.rawValue)
+            toggle.setAccessibilityLabel(title)
+            toggle.setAccessibilityHelp(detail)
+            eventSwitches[event] = toggle
+            group.add(FormRow(title: title, detail: FormText.detail(detail), control: toggle))
         }
-        add(surface(vertical(eventRows, spacing: 12)))
-        stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
-        add(label("Delivery", heading: true))
-        style.addItems(withTitles: ["Peon Toast", "macOS Notification"])
-        style.setAccessibilityLabel("Notification style")
-        style.target = self
-        style.action = #selector(styleChanged)
-        let styleLabel = label("Notification style")
-        styleLabel.font = .systemFont(ofSize: 13)
-        styleLabel.textColor = .labelColor
-        let styleRow = NSStackView(views: [styleLabel, NSView(), style])
-        styleRow.spacing = 12
-        style.widthAnchor.constraint(equalToConstant: 210).isActive = true
-        soundPack.addItems(withTitles: preferences.soundPacks.packs.map(\.name))
-        soundPack.setAccessibilityLabel("Sound pack")
-        soundPack.target = self
-        soundPack.action = #selector(soundPackChanged)
-        soundPack.widthAnchor.constraint(equalToConstant: 210).isActive = true
-        let packRow = NSStackView(views: [label("Sound pack", heading: true), NSView(), soundPack])
-        packRow.spacing = 12
-        soundButton.target = self
-        soundButton.action = #selector(soundChanged)
-        soundButton.font = .systemFont(ofSize: 13)
-        soundStatus.font = .systemFont(ofSize: 12)
-        soundStatus.textColor = .secondaryLabelColor
-        soundStatus.maximumNumberOfLines = 2
-        soundStatus.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        soundStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return FormSection(title: "Notify me about", group: group,
+                           footer: FormText.footnote("Turned-off and ignored events stay in history and won’t notify later."))
+    }
+
+    private func alertsSection() -> NSView {
+        configure(style, label: "Notification style", titles: ["Peon Toast", "macOS Notification"], action: #selector(styleChanged))
+        configure(notificationDuration, label: "Notification duration",
+                  titles: NotificationPreferences.notificationDurations.map(Form.duration), action: #selector(durationChanged))
+        configure(soundPack, label: "Sound pack", titles: preferences.soundPacks.packs.map(\.name), action: #selector(soundPackChanged))
+        soundSwitch.controlSize = .mini
+        soundSwitch.target = self
+        soundSwitch.action = #selector(soundChanged)
+        soundSwitch.identifier = NSUserInterfaceItemIdentifier("sound")
+        soundSwitch.setAccessibilityLabel("Play celebration sounds")
+        soundStatus.textColor = .systemOrange
+        let group = FormGroup()
+        group.add(FormRow(title: "Style", control: style))
+        group.add(FormRow(title: "Show for", detail: durationHelp, control: notificationDuration))
+        group.add(FormRow(title: "Play celebration sounds", detail: soundStatus, control: soundSwitch))
+        group.add(FormRow(title: "Sound pack", control: soundPack))
         let systemButton = NSButton(title: "macOS Notification Settings…", target: self, action: #selector(systemSettings))
-        systemButton.controlSize = .small
+        systemButton.isBordered = false
+        systemButton.font = .systemFont(ofSize: 11)
+        systemButton.contentTintColor = .linkColor
+        systemButton.attributedTitle = NSAttributedString(string: systemButton.title, attributes: [.foregroundColor: NSColor.linkColor, .font: NSFont.systemFont(ofSize: 11)])
         systemButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        let permissionRow = NSStackView(views: [soundStatus, systemButton])
-        permissionRow.spacing = 12
-        let soundRow = vertical([soundButton, permissionRow], spacing: 3)
-        permissionRow.leadingAnchor.constraint(equalTo: soundRow.leadingAnchor, constant: 20).isActive = true
-        permissionRow.trailingAnchor.constraint(equalTo: soundRow.trailingAnchor).isActive = true
-        func timingRow(_ title: String, control: NSPopUpButton, values: [TimeInterval], action: Selector) -> NSStackView {
-            control.addItems(withTitles: values.map { "\(Int($0)) seconds" })
-            control.setAccessibilityLabel(title)
-            control.target = self
-            control.action = action
-            control.widthAnchor.constraint(equalToConstant: 210).isActive = true
-            let row = NSStackView(views: [label(title, heading: true), NSView(), control])
-            row.spacing = 12
-            return row
-        }
-        let durationRow = timingRow("Notification duration", control: notificationDuration,
-                                    values: NotificationPreferences.notificationDurations, action: #selector(durationChanged))
-        durationHelp.font = .systemFont(ofSize: 12)
-        durationHelp.textColor = .secondaryLabelColor
-        durationHelp.maximumNumberOfLines = 2
-        let pollingRow = timingRow("GitHub polling interval", control: pollingInterval,
-                                   values: NotificationPreferences.pollingIntervals, action: #selector(pollingChanged))
-        let delivery = vertical([styleRow, durationRow, durationHelp, pollingRow, separator(), packRow, soundRow], spacing: 8)
-        add(surface(delivery))
-        for row in [styleRow, durationRow, durationHelp, pollingRow, packRow, soundRow] {
-            row.widthAnchor.constraint(equalTo: delivery.widthAnchor).isActive = true
-        }
-        stack.setCustomSpacing(20, after: stack.arrangedSubviews.last!)
-        repositoryCount.font = .systemFont(ofSize: 12)
-        repositoryCount.textColor = .secondaryLabelColor
-        let repoHeading = NSStackView(views: [label("Ignored repositories", heading: true), NSView(), repositoryCount])
-        add(repoHeading)
-        add(label("Skip all events for exact owner/repository matches."))
+        let note = FormText.footnote("macOS permission and Focus settings also apply.")
+        let footer = NSStackView(views: [note, systemButton])
+        footer.alignment = .firstBaseline
+        footer.spacing = 4
+        return FormSection(title: "Alerts", group: group, footer: footer)
+    }
+
+    private func githubSection() -> NSView {
+        configure(pollingInterval, label: "GitHub polling interval",
+                  titles: NotificationPreferences.pollingIntervals.map(Form.duration), action: #selector(pollingChanged))
+        let group = FormGroup()
+        group.add(FormRow(title: "Check for activity every", control: pollingInterval))
+        return FormSection(title: "GitHub", group: group,
+                           footer: FormText.footnote("Checks catch up after sleep. Paused events catch up when you resume."))
+    }
+
+    private func repositoriesSection() -> NSView {
         repositoryField.placeholderString = "owner/repository"
+        repositoryField.bezelStyle = .roundedBezel
         repositoryField.setAccessibilityLabel("Repository to ignore, owner slash repository")
         repositoryField.setAccessibilityHelp("Enter an exact owner/repository. No URLs or wildcards. Press Return or Add.")
         repositoryField.target = self
         repositoryField.action = #selector(addRepository)
+        repositoryField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let addButton = NSButton(title: "Add", target: self, action: #selector(addRepository))
-        addButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        addButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+        errorLabel.textColor = .systemRed
+        errorLabel.setAccessibilityLabel("Repository validation")
+        errorLabel.isHidden = true
         let input = NSStackView(views: [repositoryField, addButton])
         input.spacing = 8
-        repositoryField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        add(input)
-        errorLabel.textColor = .systemRed
-        errorLabel.font = .systemFont(ofSize: 12)
-        errorLabel.maximumNumberOfLines = 1
-        errorLabel.setAccessibilityLabel("Repository validation")
-        errorLabel.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        add(errorLabel)
-        stack.setCustomSpacing(6, after: input)
-        stack.setCustomSpacing(6, after: errorLabel)
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.borderType = .noBorder
-        scroll.drawsBackground = false
-        entries.orientation = .vertical
-        entries.alignment = .leading
-        entries.spacing = 0
-        entries.edgeInsets = NSEdgeInsets(top: 4, left: 12, bottom: 4, right: 12)
-        entries.translatesAutoresizingMaskIntoConstraints = false
-        scroll.documentView = entries
-        entries.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
-        let list = SettingsSurface()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        let listInterior = list
-        listInterior.addSubview(scroll)
-        NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: listInterior.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: listInterior.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: listInterior.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: listInterior.bottomAnchor)
-        ])
-        list.heightAnchor.constraint(equalToConstant: 104).isActive = true
-        add(list)
-        emptyState.translatesAutoresizingMaskIntoConstraints = false
-        list.addSubview(emptyState)
-        let emptyTitle = label("No repositories ignored", heading: true)
-        let emptyDetail = label("Events from all repositories are included.")
-        let emptyCopy = vertical([emptyTitle, emptyDetail], spacing: 5)
-        emptyCopy.alignment = .centerX
-        emptyCopy.translatesAutoresizingMaskIntoConstraints = false
-        emptyState.addSubview(emptyCopy)
-        NSLayoutConstraint.activate([
-            emptyState.leadingAnchor.constraint(equalTo: list.leadingAnchor),
-            emptyState.trailingAnchor.constraint(equalTo: list.trailingAnchor),
-            emptyState.topAnchor.constraint(equalTo: list.topAnchor),
-            emptyState.bottomAnchor.constraint(equalTo: list.bottomAnchor),
-            emptyCopy.centerXAnchor.constraint(equalTo: emptyState.centerXAnchor),
-            emptyCopy.centerYAnchor.constraint(equalTo: emptyState.centerYAnchor)
-        ])
-        stack.setCustomSpacing(18, after: list)
-        add(separator())
-        let policy = label("Filtered events stay in history and won’t notify later.\nPaused events catch up when you resume.")
-        let saved = label("Changes save immediately.")
-        let footerCopy = vertical([policy, saved], spacing: 4)
-        let help = NSButton(title: "About notification tests…", target: self, action: #selector(aboutTests))
-        help.bezelStyle = .rounded
-        help.controlSize = .small
-        let footer = NSStackView(views: [footerCopy, NSView(), help])
-        footer.spacing = 12
-        add(footer)
-        content.layoutSubtreeIfNeeded()
-        let contentHeight = stack.fittingSize.height + 48
-        content.heightAnchor.constraint(equalToConstant: contentHeight).isActive = true
-        let availableHeight = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-        window.setContentSize(NSSize(width: 600, height: min(contentHeight, availableHeight - 60)))
-        content.layoutSubtreeIfNeeded()
-        content.scroll(NSPoint(x: 0, y: 0))
-        window.initialFirstResponder = repositoryField
+        let entry = NSStackView(views: [input, errorLabel])
+        entry.orientation = .vertical
+        entry.alignment = .leading
+        entry.spacing = 6
+        input.widthAnchor.constraint(equalTo: entry.widthAnchor).isActive = true
+        repositoryGroup.add(FormRow(content: entry))
+        let empty = FormText.detail("No repositories ignored. Events from every repository can notify.")
+        emptyRepositories.setContent(empty)
+        repositoryGroup.add(emptyRepositories)
+        return FormSection(title: "Ignored repositories", accessory: repositoryCount, group: repositoryGroup,
+                           footer: FormText.footnote("Skips every event from an exact owner/repository match. No URLs or wildcards."))
     }
+
+    private func footer() -> NSView {
+        let saved = FormText.footnote("Changes save immediately.")
+        let help = NSButton(title: "", target: self, action: #selector(aboutTests))
+        help.bezelStyle = .helpButton
+        help.toolTip = "About notification tests"
+        help.setAccessibilityLabel("About notification tests")
+        let row = NSStackView(views: [saved, NSView(), help])
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 0)
+        return row
+    }
+
+    private func configure(_ popup: NSPopUpButton, label: String, titles: [String], action: Selector) {
+        popup.addItems(withTitles: titles)
+        popup.setAccessibilityLabel(label)
+        popup.target = self
+        popup.action = action
+        popup.controlSize = .regular
+        popup.widthAnchor.constraint(equalToConstant: Form.popupWidth).isActive = true
+    }
+
+    private func fitWindowToContent() {
+        guard let window else { return }
+        formView.layoutSubtreeIfNeeded()
+        let height = formView.fittingSize.height
+        let available = ((window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800) - 60
+        let size = NSSize(width: Form.width, height: min(height, available))
+        guard window.contentView?.frame.size != size else { return }
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        window.setFrame(frame, display: window.isVisible)
+    }
+
+    // MARK: - State
+
     @objc private func aboutTests() {
         guard let window else { return }
         let alert = NSAlert()
@@ -287,53 +229,60 @@ final class NotificationSettingsController: NSWindowController {
     }
     func refresh(systemSoundAllowed: Bool? = nil) {
         if let systemSoundAllowed { self.systemSoundAllowed = systemSoundAllowed }
-        for (event, button) in eventButtons { button.state = preferences.isEnabled(event) ? .on : .off }
+        for (event, toggle) in eventSwitches { toggle.state = preferences.isEnabled(event) ? .on : .off }
         soundPack.selectItem(at: preferences.soundPacks.packs.firstIndex { $0.id == preferences.soundPack.id } ?? 0)
-        soundButton.state = preferences.soundEnabled ? .on : .off
-        soundStatus.stringValue = self.systemSoundAllowed ? "macOS permission and Focus settings also apply." : "Sound is disabled in macOS. Enable it in Notification Settings."
+        soundSwitch.state = preferences.soundEnabled ? .on : .off
+        soundStatus.stringValue = "Sound is off in macOS. Turn it on in macOS Notification Settings."
+        soundStatus.isHidden = self.systemSoundAllowed
+        soundSwitch.setAccessibilityHelp(self.systemSoundAllowed ? "macOS permission and Focus settings also apply." : soundStatus.stringValue)
         style.selectItem(at: preferences.nativeNotifications ? 1 : 0)
         pollingInterval.selectItem(at: NotificationPreferences.pollingIntervals.firstIndex(of: preferences.pollingInterval)!)
         notificationDuration.selectItem(at: NotificationPreferences.notificationDurations.firstIndex(of: preferences.notificationDuration)!)
         notificationDuration.isEnabled = !preferences.nativeNotifications
         durationHelp.stringValue = preferences.nativeNotifications
-            ? "macOS controls notification duration. Switch to Peon Toast to set it here."
-            : "Applies to new Peon Toasts, including tests. Hover pauses dismissal."
+            ? "macOS sets the duration of its notifications."
+            : "Hover pauses dismissal. Applies to tests too."
         notificationDuration.setAccessibilityHelp(durationHelp.stringValue)
+        refreshRepositories()
+    }
+    private func refreshRepositories() {
         let repositories = preferences.ignoredRepositories
         guard displayedRepositories != repositories else { return }
         displayedRepositories = repositories
-        for view in entries.arrangedSubviews { entries.removeArrangedSubview(view); view.removeFromSuperview() }
-        repositoryCount.stringValue = "\(repositories.count) ignored"
-        emptyState.isHidden = !repositories.isEmpty
-        for (index, repo) in repositories.enumerated() {
-            if index > 0 {
-                let separator = NSBox()
-                separator.boxType = .separator
-                entries.addArrangedSubview(separator)
-                separator.widthAnchor.constraint(equalTo: entries.widthAnchor, constant: -24).isActive = true
-            }
-            let name = NSTextField(labelWithString: repo)
-            name.font = .systemFont(ofSize: 13)
+        repositoryRows.forEach(repositoryGroup.remove)
+        repositoryRows = repositories.map { repo in
+            let icon = NSImageView(image: NSImage(systemSymbolName: "eye.slash", accessibilityDescription: nil) ?? NSImage())
+            icon.contentTintColor = .secondaryLabelColor
+            icon.setAccessibilityElement(false)
+            let name = FormText.label(repo, size: 13, weight: .regular)
             name.lineBreakMode = .byTruncatingMiddle
             name.toolTip = repo
-            name.setAccessibilityLabel(repo)
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             let remove = NSButton(title: "Remove", target: self, action: #selector(removeRepository(_:)))
             remove.controlSize = .small
-            remove.widthAnchor.constraint(equalToConstant: 68).isActive = true
+            remove.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
             remove.identifier = NSUserInterfaceItemIdentifier(repo)
             remove.setAccessibilityLabel("Remove \(repo)")
-            let row = NSStackView(views: [name, NSView(), remove])
-            row.spacing = 8
-            row.distribution = .fill
-            row.heightAnchor.constraint(equalToConstant: 32).isActive = true
-            entries.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: entries.widthAnchor, constant: -24).isActive = true
-            name.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            let line = NSStackView(views: [icon, name, NSView(), remove])
+            line.alignment = .centerY
+            line.spacing = 8
+            return FormRow(content: line)
         }
+        repositoryRows.forEach(repositoryGroup.add)
+        emptyRepositories.isHidden = !repositories.isEmpty
+        repositoryCount.stringValue = repositories.isEmpty ? "" : "\(repositories.count) ignored"
+        fitWindowToContent()
+    }
+    private func showRepositoryError(_ message: String?) {
+        errorLabel.stringValue = message.map { $0.contains("already ignored") ? "This repository is already ignored." : "Enter owner/repository without a URL or wildcard." } ?? ""
+        errorLabel.isHidden = message == nil
+        errorLabel.toolTip = message
+        errorLabel.setAccessibilityHelp(message)
+        repositoryField.setAccessibilityHelp(message ?? "Enter an exact owner/repository, then press Return or Add.")
+        fitWindowToContent()
     }
     private func changed() { refresh(); onChange?() }
-    @objc private func eventChanged(_ sender: NSButton) {
+    @objc private func eventChanged(_ sender: NSSwitch) {
         guard let value = sender.identifier?.rawValue, let event = NotificationEvent(rawValue: value) else { return }
         preferences.setEnabled(sender.state == .on, for: event)
         changed()
@@ -352,15 +301,12 @@ final class NotificationSettingsController: NSWindowController {
         preferences.soundPack = preferences.soundPacks.packs[soundPack.indexOfSelectedItem]
         changed()
     }
-    @objc private func soundChanged() { preferences.soundEnabled = soundButton.state == .on; changed() }
+    @objc private func soundChanged() { preferences.soundEnabled = soundSwitch.state == .on; changed() }
     @objc private func styleChanged() { preferences.nativeNotifications = style.indexOfSelectedItem == 1; changed() }
     @objc private func systemSettings() { openSystemSettings?() }
     @objc private func addRepository() {
         let error = preferences.addRepository(repositoryField.stringValue)
-        errorLabel.stringValue = error.map { $0.contains("already ignored") ? "This repository is already ignored." : "Enter owner/repository without a URL or wildcard." } ?? ""
-        errorLabel.toolTip = error
-        errorLabel.setAccessibilityHelp(error)
-        repositoryField.setAccessibilityHelp(error ?? "Enter an exact owner/repository, then press Return or Add.")
+        showRepositoryError(error)
         if let error {
             NSAccessibility.post(element: repositoryField, notification: .announcementRequested, userInfo: [.announcement: error, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         } else {
@@ -372,35 +318,212 @@ final class NotificationSettingsController: NSWindowController {
     @objc private func removeRepository(_ sender: NSButton) {
         guard let repo = sender.identifier?.rawValue else { return }
         preferences.removeRepository(repo)
-        errorLabel.stringValue = ""
-        errorLabel.toolTip = nil
-        errorLabel.setAccessibilityHelp(nil)
-        repositoryField.setAccessibilityHelp("Enter an exact owner/repository, then press Return or Add.")
+        showRepositoryError(nil)
         changed()
         window?.makeFirstResponder(repositoryField)
     }
 }
 
-private final class RepositoryEntriesView: NSStackView {
-    override var isFlipped: Bool { true }
+// MARK: - Form building blocks
+
+private enum Form {
+    static let width: CGFloat = 560
+    static let margin: CGFloat = 24
+    static let inset: CGFloat = 14
+    static let radius: CGFloat = 10
+    static let popupWidth: CGFloat = 180
+
+    static func duration(_ seconds: TimeInterval) -> String {
+        let value = Int(seconds)
+        guard value >= 60, value % 60 == 0 else { return "\(value) seconds" }
+        return value == 60 ? "1 minute" : "\(value / 60) minutes"
+    }
 }
 
-private final class SettingsSurface: NSView {
+@MainActor
+private enum FormText {
+    static func label(_ text: String, size: CGFloat, weight: NSFont.Weight) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: size, weight: weight)
+        label.textColor = .labelColor
+        return label
+    }
+    static func detail(_ text: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return label
+    }
+    static func footnote(_ text: String) -> NSTextField {
+        let label = detail(text)
+        label.textColor = .tertiaryLabelColor
+        return label
+    }
+}
+
+/// A titled group: heading, rounded rows, and an optional note underneath.
+private final class FormSection: NSStackView {
+    init(title: String, accessory: NSView? = nil, group: FormGroup, footer: NSView? = nil) {
+        super.init(frame: .zero)
+        orientation = .vertical
+        alignment = .leading
+        spacing = 6
+        let heading = FormText.label(title, size: 13, weight: .semibold)
+        heading.setAccessibilityRole(.staticText)
+        let headingRow = NSStackView(views: [heading, NSView()] + (accessory.map { [$0] } ?? []))
+        headingRow.alignment = .firstBaseline
+        headingRow.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+        var views: [NSView] = [headingRow, group]
+        if let footer {
+            let padded = NSStackView(views: [footer])
+            padded.edgeInsets = NSEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+            views.append(padded)
+        }
+        for view in views {
+            addArrangedSubview(view)
+            view.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+        }
+        setCustomSpacing(8, after: group)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(title)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// Rounded inset surface that separates visible rows with hairlines.
+private final class FormGroup: NSView {
+    private let rows = NSStackView()
+    init() {
+        super.init(frame: .zero)
+        rows.orientation = .vertical
+        rows.alignment = .leading
+        rows.spacing = 0
+        rows.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(rows)
+        NSLayoutConstraint.activate([
+            rows.leadingAnchor.constraint(equalTo: leadingAnchor),
+            rows.trailingAnchor.constraint(equalTo: trailingAnchor),
+            rows.topAnchor.constraint(equalTo: topAnchor),
+            rows.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func add(_ row: FormRow) {
+        rows.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
+        needsLayout = true
+    }
+    func remove(_ row: FormRow) {
+        rows.removeArrangedSubview(row)
+        row.removeFromSuperview()
+        needsLayout = true
+    }
+    override func layout() {
+        super.layout()
+        var first = true
+        for case let row as FormRow in rows.arrangedSubviews where !row.isHidden {
+            row.showsSeparator = !first
+            first = false
+        }
+    }
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-        NSColor.controlBackgroundColor.setFill()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: Form.radius, yRadius: Form.radius)
+        NSColor.formSurface.setFill()
         path.fill()
-        NSColor.separatorColor.setStroke()
-        path.lineWidth = 0.5
+        NSColor.formBorder.setStroke()
+        path.lineWidth = 1
         path.stroke()
+    }
+}
+
+/// One row: a title with optional detail on the left and a control on the right.
+private final class FormRow: NSView {
+    var showsSeparator = false { didSet { if oldValue != showsSeparator { needsDisplay = true } } }
+    private var content: NSView?
+
+    init() { super.init(frame: .zero) }
+    convenience init(content: NSView) {
+        self.init()
+        setContent(content)
+    }
+    convenience init(title: String, detail: NSTextField? = nil, control: NSView) {
+        self.init()
+        let text = NSStackView(views: [FormText.label(title, size: 13, weight: .regular)] + (detail.map { [$0] } ?? []))
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 2
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        control.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let line = NSStackView(views: [text, control])
+        line.alignment = .centerY
+        line.distribution = .fill
+        line.spacing = 16
+        line.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        setContent(line)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setContent(_ view: NSView) {
+        content?.removeFromSuperview()
+        content = view
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Form.inset),
+            view.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Form.inset),
+            view.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        ])
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        guard showsSeparator else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        NSColor.separatorColor.setFill()
+        let y = isFlipped ? 0 : bounds.maxY - 1 / scale
+        NSRect(x: Form.inset, y: y, width: bounds.width - Form.inset * 2, height: 1 / scale).fill()
+    }
+}
+
+/// Rounded portrait matching the toast artwork.
+private final class PortraitView: NSImageView {
+    convenience init(image: NSImage) {
+        self.init(frame: .zero)
+        self.image = image
+        imageScaling = .scaleProportionallyUpOrDown
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.masksToBounds = true
+        setAccessibilityElement(false)
     }
 }
 
 private final class SettingsBackground: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
-        let background = NSColor.windowBackgroundColor.blended(withFraction: 0.04, of: .labelColor) ?? .windowBackgroundColor
-        background.setFill()
+        NSColor.windowBackgroundColor.setFill()
         bounds.fill()
+    }
+}
+
+private extension NSColor {
+    static var formSurface: NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.05)
+                : NSColor(white: 0, alpha: 0.035)
+        }
+    }
+    static var formBorder: NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 1, alpha: 0.08)
+                : NSColor(white: 0, alpha: 0.06)
+        }
     }
 }
