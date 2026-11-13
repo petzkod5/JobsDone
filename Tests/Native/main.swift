@@ -56,6 +56,15 @@ MainActor.assumeIsolated {
         let remove = views(window.contentView!).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "owner/repo" }!
         remove.performClick(nil)
         require(NotificationPreferences(defaults: config.defaults).ignoredRepositories.isEmpty, "real remove action saved")
+        let visible = window.screen!.visibleFrame
+        window.setFrameOrigin(NSPoint(x: window.frame.minX, y: visible.minY))
+        let heightBeforeGrowth = window.frame.height
+        field.stringValue = "owner/tall"
+        buttons.first { $0.title == "Add" }!.performClick(nil)
+        print("Window height \(heightBeforeGrowth) -> \(window.frame.height)")
+        require(window.frame.minY >= visible.minY, "window grows for a new repository without leaving the screen")
+        views(window.contentView!).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "owner/tall" }!.performClick(nil)
+        window.center()
         let popups = controls.compactMap { $0 as? NSPopUpButton }
         let pack = popups.first { $0.accessibilityLabel() == "Sound pack" }!
         require(pack.titleOfSelectedItem == "Peon", "default sound pack is visible")

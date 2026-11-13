@@ -199,11 +199,15 @@ final class NotificationSettingsController: NSWindowController {
         guard let window else { return }
         formView.layoutSubtreeIfNeeded()
         let height = formView.fittingSize.height
-        let available = ((window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800) - 60
-        let size = NSSize(width: Form.width, height: min(height, available))
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame
+        let size = NSSize(width: Form.width, height: min(height, (visible?.height ?? 800) - 60))
         guard window.contentView?.frame.size != size else { return }
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        // Keep the top edge in place, but move up rather than run off the bottom of the screen.
         frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        if let visible, frame.minY < visible.minY {
+            frame.origin.y = visible.minY
+        }
         window.setFrame(frame, display: window.isVisible)
     }
 
