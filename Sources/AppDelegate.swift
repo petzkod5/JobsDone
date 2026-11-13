@@ -20,27 +20,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var deliveryWarning: String?
     private var soundWarning: String?
     var soundEndsAt = Date.distantPast
-    private var lastCheck: Date?
+    var lastCheck: Date?
     var notificationState = NotificationReadiness.checking
     private var systemSoundAllowed = true
     private var toastPreviewsEnabled = true
     private var nativeSoundTypes = Set<String>()
-    private var login = ""
-    private var recent: [MergedPR] = []
-    private var recentIssues: [OpenedIssue] = []
-    private var recentOpened: [OpenedPR] = []
-    private var recentCommits: [CommitNotice] = []
-    private var recentComments: [CommentNotice] = []
+    var login = ""
+    var history = ActivityHistory()
     private let store: StateStore
     private var sound: NSSound?
+    let statusView = MenuStatusView()
     private var statusRow: NSMenuItem?
+    private var monitorErrorRow: NSMenuItem?
     private var permissionRow: NSMenuItem?
     private var checkRow: NSMenuItem?
     private var testRow: NSMenuItem?
-    private var workTestRow: NSMenuItem?
-    private var issueTestRow: NSMenuItem?
-    private var commentTestRow: NSMenuItem?
-    private var commitTestRow: NSMenuItem?
     private var soundRow: NSMenuItem?
     private var pollTask: Task<Void, Never>?
     private var helpWindow: NSWindow?
@@ -142,28 +136,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return "Connecting to GitHub…"
     }
 
+    /// Problems that get their own row under the status header.
+    private var setupProblems: Int {
+        let permission = notificationState == .ready || notificationState == .checking ? 0 : 1
+        return permission + [deliveryWarning, soundWarning, startupError].compactMap { $0 }.count
+    }
+
+    /// Headline, detail, and icon for the status header. Warning rows below turn the header orange; while
+    /// paused or checking, the header keeps its state icon and shows the problem count instead.
+    private var statusSummary: (String, String, NSImage?) {
+        let every = "every \(ActivityFormat.interval(preferences.pollingInterval))"
+        let account = login.isEmpty ? "" : " @\(login)"
+        func icon(_ name: String, _ tint: NSColor) -> NSImage? { MenuStyle.symbol(name, tint: tint, description: name, size: 15) }
+        let problems = setupProblems + (monitorError == nil ? 0 : 1)
+        let below = problems == 0 ? nil : problems == 1 ? "1 problem below" : "\(problems) problems below"
+        if paused {
+            let detail = busy ? "Finishing the current check…" : below ?? "Resume to catch up on missed events"
+            return ("Paused", detail, icon("pause.circle.fill", .systemGray))
+        }
+        if busy { return ("Checking GitHub…", below ?? "Watching\(account) · \(every)", icon("arrow.triangle.2.circlepath.circle.fill", .systemBlue)) }
+        if let monitorError {
+            let reason = monitorError.split(whereSeparator: \.isNewline).first.map(String.init) ?? monitorError
+            return ("Monitoring needs attention", MenuCopy.truncated(reason, limit: 48), MenuStyle.warning(size: 15))
+        }
+        let checked = lastCheck.map { "Checked \(DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .short))" }
+        let headline = checked == nil ? "Connecting to GitHub…" : "Watching\(account)"
+        if let below { return (headline, [checked, below].compactMap { $0 }.joined(separator: " · "), MenuStyle.warning(size: 15)) }
+        guard let checked else { return (headline, "Checks \(every)", icon("circle.dotted", .systemGray)) }
+        return (headline, "\(checked) · \(every)", icon("checkmark.circle.fill", .systemGreen))
+    }
+
     private var testTitle: String {
         testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Sound + Notification" : "Test Notification (Sound Off)")
     }
 
-    private var workTestTitle: String {
-        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Work Work + Notification" : "Test Opened PR Notification (Sound Off)")
-    }
-
-    private var commitTestTitle: String {
-        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Hmmm? + Notification" : "Test Commit Notification (Sound Off)")
-    }
-
-    private var commentTestTitle: String {
-        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Get ’em! + Notification" : "Test Comment Notification (Sound Off)")
-    }
-
-    private var issueTestTitle: String {
-        testing ? "Testing…" : (soundEnabled && systemSoundAllowed ? "Test Something Need Doing? + Notification" : "Test Issue Notification (Sound Off)")
-    }
-
     private var soundTitle: String {
-        systemSoundAllowed ? "Play Celebration Sound" : "Play Sound — Disabled by macOS"
+        systemSoundAllowed ? "Play Celebration Sound" : "Sound Off in macOS — Notification Settings…"
     }
 
     private func updateIcon() {
@@ -185,6 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         item.button?.toolTip = status
     }
 
+    /// Number of newest events listed directly in the menu; the rest stay one level down in All Activity.
+    static let recentActivityLimit = 5
+
     func refreshMenu() {
         guard item != nil else { return }
         if SMAppService.mainApp.status == .enabled { startupError = nil }
@@ -193,132 +204,128 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         helpTestButton?.title = testTitle
         helpTestButton?.isEnabled = !busy && !testing
         // Preserve the active native menu and its keyboard selection during background updates.
-        if menuOpen {
-            statusRow?.title = status
-            statusRow?.isEnabled = !busy && monitorError != nil
-            statusRow?.toolTip = monitorError
-            permissionRow?.title = notificationState.actionTitle
-            checkRow?.isEnabled = !busy && !paused && !testing
-            checkRow?.title = busy ? "Checking…" : "Check Now"
-            testRow?.title = testTitle
-            testRow?.isEnabled = !busy && !testing
-            workTestRow?.title = workTestTitle
-            workTestRow?.isEnabled = !busy && !testing
-            commentTestRow?.title = commentTestTitle
-            commentTestRow?.isEnabled = !busy && !testing
-            commitTestRow?.title = commitTestTitle
-            commitTestRow?.isEnabled = !busy && !testing
-            issueTestRow?.title = issueTestTitle
-            issueTestRow?.isEnabled = !busy && !testing
-            soundRow?.title = soundTitle
-            soundRow?.state = soundEnabled ? .on : .off
-            return
-        }
+        if menuOpen { updateLiveRows(); return }
         menu.removeAllItems()
-        @discardableResult func row(_ title: String, _ action: Selector? = nil, key: String = "") -> NSMenuItem {
-            let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            entry.target = self
-            menu.addItem(entry)
-            return entry
-        }
-        row("Job’s Done").isEnabled = false
-        row(login.isEmpty ? "Your GitHub PRs and owned-repository issues · every \(Int(preferences.pollingInterval)) seconds" : "@\(login) · PRs and owned-repository issues · every \(Int(preferences.pollingInterval)) seconds").isEnabled = false
-        statusRow = row(status, #selector(showMonitorError))
-        statusRow?.isEnabled = !busy && monitorError != nil
-        statusRow?.toolTip = monitorError
-        permissionRow = row(notificationState.actionTitle, #selector(notificationSettings))
-        if deliveryWarning != nil { row("Notification issue — View Details…", #selector(showDeliveryWarning)) }
-        if soundWarning != nil { row("Sound issue — View Details…", #selector(showSoundWarning)) }
+        addStatusRows()
         menu.addItem(.separator())
-        checkRow = row(busy ? "Checking…" : "Check Now", #selector(checkNow), key: "r")
-        checkRow?.isEnabled = !busy && !paused && !testing
-        testRow = row(testTitle, #selector(test))
-        testRow?.isEnabled = !busy && !testing
-        workTestRow = row(workTestTitle, #selector(testWorkWork))
-        workTestRow?.isEnabled = !busy && !testing
-        commentTestRow = row(commentTestTitle, #selector(testComment))
-        commentTestRow?.isEnabled = !busy && !testing
-        commitTestRow = row(commitTestTitle, #selector(testCommit))
-        commitTestRow?.isEnabled = !busy && !testing
-        issueTestRow = row(issueTestTitle, #selector(testIssue))
-        issueTestRow?.isEnabled = !busy && !testing
-        soundRow = row(soundTitle, #selector(toggleSound))
-        soundRow?.state = soundEnabled ? .on : .off
-        soundRow?.toolTip = "One sound per event type per check, even when several events arrive. macOS notification Sound settings also apply."
-        let styles = NSMenu()
-        styles.autoenablesItems = false
-        for (title, tag) in [("Peon Toast (Real Portrait)", 1), ("macOS Notification", 0)] {
-            let choice = NSMenuItem(title: title, action: #selector(chooseNotificationStyle(_:)), keyEquivalent: "")
-            choice.target = self
-            choice.tag = tag
-            choice.state = (tag == 1) == usesPeonToasts ? .on : .off
-            styles.addItem(choice)
-        }
-        row("Notification Style").submenu = styles
-        row(paused ? "Resume Monitoring" : "Pause Monitoring", #selector(togglePause))
+        addActivityRows()
+        menu.addItem(.separator())
+        addControlRows()
+        menu.addItem(.separator())
         let startup = row(startupTitle, #selector(toggleStartup))
         startup.state = SMAppService.mainApp.status == .enabled ? .on : (SMAppService.mainApp.status == .requiresApproval ? .mixed : .off)
-        if startupError != nil { row("Login setup needs attention — View Details…", #selector(showStartupError)) }
-        menu.addItem(.separator())
-        row("Recently Opened").isEnabled = false
-        if recentOpened.isEmpty { row("New PRs you create will appear here").isEnabled = false }
-        for pr in recentOpened {
-            let title = "\(pr.repository.nameWithOwner) #\(pr.number) · \(pr.title)"
-            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
-            entry.representedObject = pr.url
-            entry.toolTip = "\(title)\nOpened \(DateFormatter.localizedString(from: pr.createdAt, dateStyle: .medium, timeStyle: .short))"
-        }
-        menu.addItem(.separator())
-        row("Recent Issues").isEnabled = false
-        if recentIssues.isEmpty { row("New issues in repositories you own will appear here").isEnabled = false }
-        for issue in recentIssues {
-            let title = "\(issue.repository.nameWithOwner) #\(issue.number) · \(issue.title)"
-            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
-            entry.representedObject = issue.url
-            entry.toolTip = "\(title)\nOpened \(DateFormatter.localizedString(from: issue.createdAt, dateStyle: .medium, timeStyle: .short))"
-        }
-        menu.addItem(.separator())
-        row("Recent Merges").isEnabled = false
-        if recent.isEmpty { row("New merges of your PRs will appear here").isEnabled = false }
-        for pr in recent {
-            let title = "\(pr.repository.nameWithOwner) #\(pr.number) · \(pr.title)"
-            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
-            entry.representedObject = pr.url
-            entry.toolTip = "\(title)\nMerged \(DateFormatter.localizedString(from: pr.mergedAt, dateStyle: .medium, timeStyle: .short))"
-        }
-        menu.addItem(.separator())
-        row("Recent Commits by Others").isEnabled = false
-        if recentCommits.isEmpty { row("New commits by others on your PRs will appear here").isEnabled = false }
-        for notice in recentCommits {
-            let author = notice.commit.author.user?.login ?? "Unknown author"
-            let title = "\(notice.pr.repository.nameWithOwner) #\(notice.pr.number) · @\(author): \(notice.commit.messageHeadline)"
-            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
-            entry.representedObject = notice.pr.url
-            entry.toolTip = "\(title)\n\(notice.commit.oid)"
-        }
-        menu.addItem(.separator())
-        addRecentComments()
-        menu.addItem(.separator())
-        row("Settings…", #selector(showSettings), key: ",")
-        row("About / Setup Help…", #selector(showHelp))
-        row("Quit Job’s Done", #selector(quit), key: "q")
+        startup.image = MenuStyle.control("power.circle", "Open at Login")
+        row("Settings…", #selector(showSettings), key: ",").image = MenuStyle.control("gearshape", "Settings")
+        row("Setup Help…", #selector(showHelp)).image = MenuStyle.control("questionmark.circle", "Setup Help")
+        row("Quit Job’s Done", #selector(quit), key: "q").image = MenuStyle.control("xmark.circle", "Quit")
+        updateLiveRows()
     }
 
-    private func addRecentComments() {
-        func row(_ title: String, _ action: Selector? = nil) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-            return item
+    @discardableResult
+    private func row(_ title: String, _ action: Selector? = nil, key: String = "", in parent: NSMenu? = nil) -> NSMenuItem {
+        let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        entry.target = self
+        (parent ?? menu).addItem(entry)
+        return entry
+    }
+
+    private func warningRow(_ title: String, _ action: Selector) -> NSMenuItem {
+        let entry = row(title, action)
+        entry.image = MenuStyle.warning()
+        return entry
+    }
+
+    private func addStatusRows() {
+        statusRow = row(status)
+        statusRow?.view = statusView
+        // Disabled so arrow keys skip it; the view draws its own full-contrast text.
+        statusRow?.isEnabled = false
+        // Only problems get their own rows; healthy settings live in Settings….
+        monitorErrorRow = warningRow("Show Error Details…", #selector(showMonitorError))
+        permissionRow = warningRow(notificationState.actionTitle, #selector(notificationSettings))
+        if deliveryWarning != nil { _ = warningRow("Notification issue — View Details…", #selector(showDeliveryWarning)) }
+        if soundWarning != nil { _ = warningRow("Sound issue — View Details…", #selector(showSoundWarning)) }
+        if startupError != nil { _ = warningRow("Open at Login needs attention — View Details…", #selector(showStartupError)) }
+    }
+
+    private func addActivityRows() {
+        menu.addItem(MenuStyle.sectionHeader("Recent Activity"))
+        let now = configuration.now()
+        let timeline = history.timeline
+        guard !timeline.isEmpty else {
+            let empty = row("No activity yet")
+            empty.attributedTitle = MenuStyle.twoLine("No activity yet", "New events from GitHub appear here")
+            empty.image = MenuStyle.symbol("tray", tint: .tertiaryLabelColor, description: "No activity")
+            empty.isEnabled = false
+            return
         }
-        row("Recent Comments by Others").isEnabled = false
-        if recentComments.isEmpty { row("New comments by others on your PRs will appear here").isEnabled = false }
-        for notice in recentComments {
-            let title = "\(notice.pr.repository.nameWithOwner) #\(notice.pr.number) · @\(notice.author): \(notice.body)"
-            let entry = row(MenuCopy.truncated(title, limit: 68), #selector(openPR(_:)))
-            entry.representedObject = notice.url
-            entry.toolTip = title
+        for entry in timeline.prefix(Self.recentActivityLimit) {
+            menu.addItem(MenuStyle.activityItem(entry, now: now, target: self, action: #selector(openPR(_:))))
         }
+        // Everything is already listed above, so a grouped view would only repeat it.
+        guard timeline.count > Self.recentActivityLimit else { return }
+        let all = NSMenu()
+        all.autoenablesItems = false
+        for kind in ActivityKind.allCases {
+            let entries = history.entries(kind)
+            guard !entries.isEmpty else { continue }
+            let category = row(kind.sectionTitle, in: all)
+            category.image = MenuStyle.symbol(kind.symbol, tint: kind.tint, description: kind.label)
+            MenuStyle.setCount(entries.count, on: category, title: kind.sectionTitle)
+            let list = NSMenu()
+            list.autoenablesItems = false
+            for entry in entries {
+                list.addItem(MenuStyle.activityItem(entry, now: now, includeKind: false, target: self, action: #selector(openPR(_:))))
+            }
+            category.submenu = list
+        }
+        let allRow = row("All Activity")
+        allRow.submenu = all
+        allRow.image = MenuStyle.control("tray.full", "All Activity")
+        MenuStyle.setCount(timeline.count, on: allRow, title: "All Activity")
+    }
+
+    private func addControlRows() {
+        checkRow = row("Check Now", #selector(checkNow), key: "r")
+        checkRow?.image = MenuStyle.control("arrow.clockwise", "Check Now")
+        row(paused ? "Resume Monitoring" : "Pause Monitoring", #selector(togglePause)).image =
+            MenuStyle.control(paused ? "play.circle" : "pause.circle", paused ? "Resume" : "Pause")
+        soundRow = row(soundTitle, #selector(toggleSound))
+        soundRow?.toolTip = "One sound per event type per check, even when several events arrive. macOS notification Sound settings also apply."
+        let tests = NSMenu()
+        tests.autoenablesItems = false
+        tests.addItem(MenuStyle.sectionHeader(soundEnabled && systemSoundAllowed ? "Plays the sound and shows a notification" : "Sound is off — shows a notification only"))
+        for kind in ActivityKind.allCases {
+            let entry = row(kind.testTitle, #selector(runTest(_:)), in: tests)
+            entry.representedObject = kind
+            entry.image = MenuStyle.symbol(kind.symbol, tint: kind.tint, description: kind.label)
+        }
+        testRow = row("Test Notifications")
+        testRow?.submenu = tests
+        testRow?.image = MenuStyle.control("bell.badge", "Test Notifications")
+    }
+
+    private func updateLiveRows() {
+        let (headline, detail, image) = statusSummary
+        statusRow?.title = "\(headline) — \(detail)"
+        statusView.update(headline: headline, detail: detail, image: image)
+        statusView.toolTip = status
+        // Disabled rather than hidden during a check, so rows don't shift under the pointer.
+        monitorErrorRow?.isHidden = monitorError == nil
+        monitorErrorRow?.isEnabled = !busy
+        monitorErrorRow?.toolTip = monitorError
+        permissionRow?.title = notificationState.actionTitle
+        permissionRow?.isHidden = notificationState == .ready || notificationState == .checking
+        checkRow?.isEnabled = !busy && !paused && !testing
+        checkRow?.title = busy ? "Checking…" : "Check Now"
+        testRow?.title = testing ? "Testing…" : "Test Notifications"
+        for entry in testRow?.submenu?.items ?? [] where entry.action != nil { entry.isEnabled = !busy && !testing }
+        soundRow?.title = soundTitle
+        // A checkmark would claim sound plays while macOS blocks it; the row opens macOS settings instead.
+        soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
+        soundRow?.image = MenuStyle.control(soundEnabled && systemSoundAllowed ? "speaker.wave.2" : "speaker.slash", "Sound")
+        statusView.hasStateColumn = menu.items.contains { !$0.isHidden && $0.state != .off }
+        soundRow?.action = systemSoundAllowed ? #selector(toggleSound) : #selector(notificationSettings)
     }
 
     private var startupTitle: String {
@@ -372,13 +379,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !soundEnabled { sound?.stop(); soundEndsAt = .distantPast }
         refreshMenu()
     }
-    @objc private func chooseNotificationStyle(_ sender: NSMenuItem) {
-        preferences.nativeNotifications = sender.tag == 0
-        peonToasts.dismissAll()
-        sound?.stop()
-        soundEndsAt = .distantPast
-        refreshMenu()
-    }
     @objc private func quit() { pollTask?.cancel(); sound?.stop(); peonToasts.dismissAll(); NSApp.terminate(nil) }
     @objc private func openSystemNotificationSettings() {
         guard !configuration.isolated else { return }
@@ -422,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     @objc private func showMonitorError() { if let monitorError { alert("Monitoring needs attention", monitorError + "\n\nChecks retry every \(Int(preferences.pollingInterval)) seconds. Use Check Now after correcting the issue. Setup Help explains GitHub sign-in.") } }
     @objc private func showStartupError() { if let startupError { alert("Open at Login needs attention", startupError + "\n\nUse System Settings → General → Login Items to review Job’s Done.") } }
-    @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour GitHub events are saved in Recently Opened, Recent Merges, Recent Commits by Others, and Recent Issues. They will not replay their sound because a banner failed.") } }
+    @objc private func showDeliveryWarning() { if let deliveryWarning { alert("Celebration needs attention", deliveryWarning + "\n\nYour GitHub events are saved in Recent Activity. They will not replay their sound because a banner failed.") } }
     @objc private func showSoundWarning() {
         if let soundWarning { alert("Celebration sound needs attention", soundWarning) }
     }
@@ -437,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return child
         }
         let application = submenu("Job’s Done")
-        let about = NSMenuItem(title: "About / Setup Help…", action: #selector(showHelp), keyEquivalent: "")
+        let about = NSMenuItem(title: "Setup Help…", action: #selector(showHelp), keyEquivalent: "")
         about.target = self
         application.addItem(about)
         let openMenu = NSMenuItem(title: "Open Peon Menu", action: #selector(openPeonMenu), keyEquivalent: "M")
@@ -522,8 +522,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let setup = section("SIGN IN", "Install GitHub CLI, then run in Terminal:\ngh auth login --hostname github.com", command: "gh auth login --hostname github.com")
         let watching = section("WHAT GETS CELEBRATED", "Your authored PRs: “Work Work” when opened, “Job’s done” when merged, “Hmmm?” for commits by other GitHub authors on your PRs, and “Get ’em!” for their comments. “Something need doing?” when anyone opens an issue in a repository you own. Set the GitHub polling interval in Settings. Checks catch up after sleep. Earlier events stay silent.")
-        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Manage Open at Login in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recently Opened, Recent Merges, Recent Commits by Others, or Recent Issues.")
-        let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification in Notification Style for system banners and Focus handling. PR and issue links stay in the menu after a toast closes.")
+        let controlsHelp = section("CONTROLS", "Turn off Play Celebration Sound to mute without stopping checks. Pause holds new alerts until you resume. Test Notifications and Open at Login are in the Peon menu. Keyboard: ⌘⇧M opens the menu from Help; use arrow keys and Return on Recent Activity.")
+        let notices = section("NOTIFICATIONS", "Peon toasts show the real portrait and may appear during Focus. Choose macOS Notification as the Notification style in Settings for system banners and Focus handling. PR and issue links stay in Recent Activity after a toast closes.")
         let controls = NSStackView()
         controls.spacing = 12
         let menuButton = NSButton(title: "Open Peon Menu", target: self, action: #selector(showHelpMenu(_:)))
@@ -571,15 +571,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 body: $0.body, url: $0.url, issueOpened: $0.issueOpened, opened: $0.opened, committed: $0.committed)
             })
             session.login = login
-            session.recentIssues = recentIssues
-            session.recent = recent; session.recentOpened = recentOpened; session.recentCommits = recentCommits
-            session.recentComments = recentComments
+            session.recentIssues = history.issues
+            session.recent = history.merged; session.recentOpened = history.opened; session.recentCommits = history.commits
+            session.recentComments = history.comments
             session.lastCheck = lastCheck
             await session.run()
             login = session.login
-            recentIssues = session.recentIssues
-            recent = session.recent; recentOpened = session.recentOpened; recentCommits = session.recentCommits
-            recentComments = session.recentComments
+            history = ActivityHistory(opened: session.recentOpened, merged: session.recent, issues: session.recentIssues,
+                                      commits: session.recentCommits, comments: session.recentComments)
             lastCheck = session.lastCheck; monitorError = session.monitorError
         }
     }
@@ -645,13 +644,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func test() { runTest(opened: false) }
-    @objc private func testWorkWork() { runTest(opened: true) }
 
-    @objc private func testComment() { runTest(opened: false, commented: true) }
-
-    @objc private func testCommit() { runTest(opened: false, committed: true) }
-
-    @objc private func testIssue() { runTest(opened: false, issueOpened: true) }
+    @objc private func runTest(_ sender: NSMenuItem) {
+        switch sender.representedObject as? ActivityKind {
+        case .opened: runTest(opened: true)
+        case .issue: runTest(opened: false, issueOpened: true)
+        case .commit: runTest(opened: false, committed: true)
+        case .comment: runTest(opened: false, commented: true)
+        case .merged, nil: runTest(opened: false)
+        }
+    }
 
     private func runTest(opened: Bool, committed: Bool = false, issueOpened: Bool = false, commented: Bool = false) {
         guard !configuration.isolated else { return }
@@ -670,9 +672,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
             await post(id: "jobsdone-test-current", subtitle: commented ? "Sample comment by another author" : issueOpened ? "Sample opened issue notification" : committed ? "Sample commit by another author" : opened ? "Sample opened PR notification" : "Sample merge notification", body: "Job’s Done \(version) test — click to open GitHub.", url: issueOpened ? "https://github.com/issues" : "https://github.com/pulls", issueOpened: issueOpened, opened: opened, committed: committed, commented: commented)
             if notificationState != .ready {
-                let history = commented ? "Recent Comments by Others" : issueOpened ? "Recent Issues" : committed ? "Recent Commits by Others" : opened ? "Recently Opened" : "Recent Merges"
                 let focusNote = usesPeonToasts ? "" : " Focus may also suppress macOS banners."
-                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour GitHub events will still appear in \(history). Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications.\(focusNote)")
+                alert("Test completed — notifications need setup", "\(notificationState.explanation)\n\nYour GitHub events will still appear in Recent Activity. Select “\(notificationState.actionTitle)” in the Peon menu to enable notifications.\(focusNote)")
             }
         }
     }

@@ -64,7 +64,37 @@ MainActor.assumeIsolated {
         polling.selectItem(at: 3)
         app.sendAction(polling.action!, to: polling.target, from: polling)
         require(NotificationPreferences(defaults: config.defaults).pollingInterval == 300, "polling action saved and read back")
-        require(delegate.menu.items.contains { $0.title.contains("every 300 seconds") }, "polling action synchronized menu")
+        require(delegate.menu.items.contains { $0.title.contains("every 5 min") }, "polling action synchronized menu")
+        let repo = MergedPR.Repository(nameWithOwner: "owner/repo")
+        delegate.history = ActivityHistory(
+            opened: (0..<10).map { OpenedPR(id: "o\($0)", title: "Opened \($0)", url: "https://github.com/owner/repo/pull/\($0)", number: $0,
+                                           createdAt: Date(timeIntervalSinceNow: Double(-$0 * 60)), repository: repo) },
+            merged: (0..<10).map { MergedPR(id: "m\($0)", title: "Merged \($0)", url: "https://github.com/owner/repo/pull/\($0)", number: $0,
+                                           mergedAt: Date(timeIntervalSinceNow: Double(-$0 * 60 - 30)), repository: repo) })
+        delegate.refreshMenu()
+        let activity = delegate.menu.items.filter { ($0.representedObject as? String)?.hasPrefix("https://github.com/") == true }
+        require(activity.count == AppDelegate.recentActivityLimit, "menu lists only the newest activity")
+        require(activity.first?.representedObject as? String == "https://github.com/owner/repo/pull/0", "newest activity first")
+        let all = delegate.menu.items.first { $0.title == "All Activity" || $0.title == "All Activity (20)" }
+        require(all?.submenu?.items.map(\.title.first) == ["O", "M"], "full history grouped by kind; empty kinds omitted")
+        require(all?.submenu?.items.first?.submenu?.items.count == 10, "category submenu keeps full history")
+        if #available(macOS 14.0, *) { require(all?.badge?.itemCount == 20, "All Activity shows the total count") }
+        let tests = delegate.menu.items.first { $0.title == "Test Notifications" }?.submenu
+        require(tests?.items.filter { $0.action != nil }.count == ActivityKind.allCases.count, "tests grouped in one submenu")
+        require(delegate.menu.items.count <= 22, "menu stays short with full history (\(delegate.menu.items.count) rows)")
+        let iconSizes = Set(delegate.menu.items.compactMap(\.image?.size).map { "\($0)" })
+        require(iconSizes == ["\(MenuStyle.iconCanvas)"], "row icons share one canvas so text stays in one column")
+        require(delegate.menu.items.first?.view === delegate.statusView && delegate.menu.items.first?.isEnabled == false, "status header skipped by arrow keys")
+        delegate.preferences.soundEnabled = false
+        delegate.refreshMenu()
+        require(!delegate.statusView.hasStateColumn, "header follows rows when no checkmark column")
+        delegate.preferences.soundEnabled = true
+        delegate.refreshMenu()
+        require(delegate.statusView.hasStateColumn, "header follows rows with checkmark column")
+        delegate.history = ActivityHistory()
+        delegate.refreshMenu()
+        require(delegate.menu.items.contains { $0.title.hasPrefix("No activity yet") && !$0.isEnabled }, "empty activity state")
+        require(!delegate.menu.items.contains { $0.title.hasPrefix("All Activity") }, "no grouped history when everything is listed")
         let duration = popups.first { $0.accessibilityLabel() == "Notification duration" }!
         duration.selectItem(at: 3)
         app.sendAction(duration.action!, to: duration.target, from: duration)

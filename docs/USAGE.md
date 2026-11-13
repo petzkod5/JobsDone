@@ -9,8 +9,16 @@ to 15 minutes (default: 60 seconds). Changes apply immediately. GitHub CLI handl
 into the app.
 
 New PRs include drafts. Existing PRs stay quiet when monitoring first starts;
-after that, missed events catch up when the app runs again. Recent PR links
+after that, missed events catch up when the app runs again. Event links
 remain in the menu after a notification disappears.
+
+## Recent Activity
+
+The Peon menu lists the five newest events under **Recent Activity**, newest
+first, with the repository, number, and age. When there are more, **All
+Activity** groups every saved event into Opened PRs, Merged PRs, New Issues,
+Commits by Others, and Comments by Others. Each group keeps the last 10 events.
+Use **Test Notifications** to preview each alert.
 
 Other people’s commits on your PRs play “Hmmm?”. Attribution uses the linked
 GitHub commit author, including bots. Your own commits and commits without a
@@ -20,16 +28,16 @@ Saved commit IDs prevent repeats across restart and force-push.
 
 Other people’s comments on your PRs play “Get ’em!”. This includes conversation
 comments, inline review comments, and review messages. Your own comments stay
-quiet. **Recent Comments by Others** links directly to each comment. Existing
+quiet. Comment rows in **Recent Activity** link directly to each comment. Existing
 comments stay silent on first launch or upgrade; saved IDs prevent repeats.
 
-New issues play “Something need doing?” and appear under **Recent Issues**.
+New issues play “Something need doing?” and appear in **Recent Activity**.
 Existing issues stay silent on first launch or upgrade. Issues closed between
 checks are included. Saved issue IDs prevent repeat alerts after restart.
 
 ## Choose a notification style
 
-Open **Settings…** or use the Peon menu:
+Open **Settings…** and choose **Notification style**:
 
 - **Peon Toast** (default): app-owned toast with an Open Pull Request or Open Issue button.
   It may appear during Focus and saves a quiet copy in Notification Center.
@@ -64,7 +72,7 @@ apply. Pause and **Open at Login** are in the Peon menu.
 
 In Help, **Command-C** copies selected text, **Command-A** selects all, and
 **Command-W** closes the window. **Command-Shift-M** opens the Peon menu from
-Help. Use arrow keys and Return to open links under **Recently Opened**,
-**Recent Merges**, **Recent Commits by Others**, **Recent Comments by Others**, or **Recent Issues**.
+Help. Use arrow keys and Return to open links under **Recent Activity** or
+**All Activity**.
 
 For sign-in or notification problems, see [Help](../SUPPORT.md).
