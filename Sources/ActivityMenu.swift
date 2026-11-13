@@ -256,6 +256,16 @@ final class MenuStatusView: NSView {
     private let icon = NSImageView()
     private let headline = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
+    private var iconCenter: NSLayoutConstraint!
+    private var textLeading: NSLayoutConstraint!
+    /// Native rows sit 8pt further right when any row shows a checkmark; the header follows them.
+    private var inset: CGFloat { hasStateColumn ? 48 : 40 }
+    var hasStateColumn = true {
+        didSet {
+            iconCenter.constant = inset - 15
+            textLeading.constant = inset
+        }
+    }
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 44))
@@ -272,10 +282,12 @@ final class MenuStatusView: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
+        iconCenter = icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: inset - 15)
+        textLeading = text.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset)
         NSLayoutConstraint.activate([
-            icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: 33),
+            iconCenter,
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            text.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 48),
+            textLeading,
             text.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
             text.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
@@ -291,7 +303,7 @@ final class MenuStatusView: NSView {
         self.detail.stringValue = detail
         icon.image = image
         setAccessibilityLabel("\(headline). \(detail)")
-        let width = max(self.headline.intrinsicContentSize.width, self.detail.intrinsicContentSize.width) + 48 + 14
+        let width = max(self.headline.intrinsicContentSize.width, self.detail.intrinsicContentSize.width) + inset + 14
         setFrameSize(NSSize(width: max(240, width), height: 44))
     }
 }

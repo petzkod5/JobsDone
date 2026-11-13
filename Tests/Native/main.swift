@@ -82,6 +82,13 @@ MainActor.assumeIsolated {
         let tests = delegate.menu.items.first { $0.title == "Test Notifications" }?.submenu
         require(tests?.items.filter { $0.action != nil }.count == ActivityKind.allCases.count, "tests grouped in one submenu")
         require(delegate.menu.items.count <= 22, "menu stays short with full history (\(delegate.menu.items.count) rows)")
+        require(delegate.menu.items.first?.view === delegate.statusView && delegate.menu.items.first?.isEnabled == false, "status header skipped by arrow keys")
+        delegate.preferences.soundEnabled = false
+        delegate.refreshMenu()
+        require(!delegate.statusView.hasStateColumn, "header follows rows when no checkmark column")
+        delegate.preferences.soundEnabled = true
+        delegate.refreshMenu()
+        require(delegate.statusView.hasStateColumn, "header follows rows with checkmark column")
         delegate.history = ActivityHistory()
         delegate.refreshMenu()
         require(delegate.menu.items.contains { $0.title.hasPrefix("No activity yet") && !$0.isEnabled }, "empty activity state")

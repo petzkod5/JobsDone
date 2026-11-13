@@ -147,8 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let every = "every \(ActivityFormat.interval(preferences.pollingInterval))"
         let account = login.isEmpty ? "" : " @\(login)"
         func icon(_ name: String, _ tint: NSColor) -> NSImage? { MenuStyle.symbol(name, tint: tint, description: name, size: 15) }
+        let problems = setupProblems + (monitorError == nil ? 0 : 1)
+        let below = problems == 0 ? nil : problems == 1 ? "1 problem below" : "\(problems) problems below"
         if paused {
-            return ("Paused", busy ? "Finishing the current check…" : "Resume to catch up on missed events", icon("pause.circle.fill", .systemGray))
+            let detail = busy ? "Finishing the current check…" : below ?? "Resume to catch up on missed events"
+            return ("Paused", detail, icon("pause.circle.fill", .systemGray))
         }
         if busy { return ("Checking GitHub…", "Watching\(account) · \(every)", icon("arrow.triangle.2.circlepath.circle.fill", .systemBlue)) }
         if let monitorError {
@@ -156,12 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return ("Monitoring needs attention", MenuCopy.truncated(reason, limit: 48), MenuStyle.warning(size: 15))
         }
         let checked = lastCheck.map { "Checked \(DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .short))" }
-        guard let checked else { return ("Connecting to GitHub…", "Checks \(every)", icon("circle.dotted", .systemGray)) }
-        let problems = setupProblems
-        if problems > 0 {
-            return ("Watching\(account)", "\(checked) · \(problems == 1 ? "1 problem" : "\(problems) problems") below", MenuStyle.warning(size: 15))
-        }
-        return ("Watching\(account)", "\(checked) · \(every)", icon("checkmark.circle.fill", .systemGreen))
+        let headline = checked == nil ? "Connecting to GitHub…" : "Watching\(account)"
+        if let below { return (headline, [checked, below].compactMap { $0 }.joined(separator: " · "), MenuStyle.warning(size: 15)) }
+        guard let checked else { return (headline, "Checks \(every)", icon("circle.dotted", .systemGray)) }
+        return (headline, "\(checked) · \(every)", icon("checkmark.circle.fill", .systemGreen))
     }
 
     private var testTitle: String {
@@ -236,6 +237,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func addStatusRows() {
         statusRow = row(status)
         statusRow?.view = statusView
+        // Disabled so arrow keys skip it; the view draws its own full-contrast text.
+        statusRow?.isEnabled = false
         // Only problems get their own rows; healthy settings live in Settings….
         monitorErrorRow = warningRow("Show Error Details…", #selector(showMonitorError))
         permissionRow = warningRow(notificationState.actionTitle, #selector(notificationSettings))
@@ -251,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard !timeline.isEmpty else {
             let empty = row("No activity yet")
             empty.attributedTitle = MenuStyle.twoLine("No activity yet", "New events from GitHub appear here")
+            empty.image = MenuStyle.symbol("tray", tint: .tertiaryLabelColor, description: "No activity")
             empty.isEnabled = false
             return
         }
@@ -286,7 +290,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         row(paused ? "Resume Monitoring" : "Pause Monitoring", #selector(togglePause)).image =
             MenuStyle.control(paused ? "play.circle" : "pause.circle", paused ? "Resume" : "Pause")
         soundRow = row(soundTitle, #selector(toggleSound))
-        soundRow?.image = MenuStyle.control("speaker.wave.2", "Sound")
         soundRow?.toolTip = "One sound per event type per check, even when several events arrive. macOS notification Sound settings also apply."
         let tests = NSMenu()
         tests.autoenablesItems = false
@@ -317,6 +320,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         soundRow?.title = soundTitle
         // A checkmark would claim sound plays while macOS blocks it; the row opens macOS settings instead.
         soundRow?.state = soundEnabled && systemSoundAllowed ? .on : .off
+        soundRow?.image = MenuStyle.control(soundEnabled && systemSoundAllowed ? "speaker.wave.2" : "speaker.slash", "Sound")
+        statusView.hasStateColumn = menu.items.contains { !$0.isHidden && $0.state != .off }
         soundRow?.action = systemSoundAllowed ? #selector(toggleSound) : #selector(notificationSettings)
     }
 
