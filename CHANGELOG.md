@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.0](https://github.com/petzkod5/JobsDone/compare/v1.6.0...v1.7.0) (2026-11-13)
+
+
+### Features
+
+* **menu:** replace per-type history lists with a compact Recent Activity feed ([#30](https://github.com/petzkod5/JobsDone/issues/30)) ([7956440](https://github.com/petzkod5/JobsDone/commit/7956440bcb42f1c36587c2a4d777a1a9466ff243))
+* notify when others comment on your PRs ([#28](https://github.com/petzkod5/JobsDone/issues/28)) ([8554cfb](https://github.com/petzkod5/JobsDone/commit/8554cfb2b37961181036946769fd34d1acc82d1d))
+* **settings:** redesign the settings window as a grouped form ([#31](https://github.com/petzkod5/JobsDone/issues/31)) ([2157291](https://github.com/petzkod5/JobsDone/commit/21572913fb0923ea0c420bcca1e366bb6fcef948))
+
 ## [1.6.0](https://github.com/petzkod5/JobsDone/compare/v1.5.0...v1.6.0) (2026-11-07)
 
 
