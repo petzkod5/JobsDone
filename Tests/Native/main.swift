@@ -82,6 +82,8 @@ MainActor.assumeIsolated {
         let tests = delegate.menu.items.first { $0.title == "Test Notifications" }?.submenu
         require(tests?.items.filter { $0.action != nil }.count == ActivityKind.allCases.count, "tests grouped in one submenu")
         require(delegate.menu.items.count <= 22, "menu stays short with full history (\(delegate.menu.items.count) rows)")
+        let iconSizes = Set(delegate.menu.items.compactMap(\.image?.size).map { "\($0)" })
+        require(iconSizes == ["\(MenuStyle.iconCanvas)"], "row icons share one canvas so text stays in one column")
         require(delegate.menu.items.first?.view === delegate.statusView && delegate.menu.items.first?.isEnabled == false, "status header skipped by arrow keys")
         delegate.preferences.soundEnabled = false
         delegate.refreshMenu()

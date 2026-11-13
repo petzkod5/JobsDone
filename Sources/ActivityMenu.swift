@@ -175,26 +175,45 @@ enum ActivityFormat {
 @MainActor
 enum MenuStyle {
     static let titleLimit = 48
+    /// Every menu icon is centered on this canvas. AppKit sizes the icon column from the widest image,
+    /// so a fixed canvas keeps text in one column whichever events are listed. The commit glyph is the widest.
+    static let iconCanvas = NSSize(width: 19, height: 15)
+    static let iconPointSize: CGFloat = 11
 
-    static func symbol(_ name: String, tint: NSColor, description: String, size: CGFloat = 13) -> NSImage? {
+    static func fixed(_ image: NSImage?) -> NSImage? {
+        guard let image else { return nil }
+        let canvas = NSImage(size: iconCanvas, flipped: false) { rect in
+            let origin = NSPoint(x: rect.midX - image.size.width / 2, y: rect.midY - image.size.height / 2)
+            image.draw(in: NSRect(origin: origin, size: image.size).integral)
+            return true
+        }
+        canvas.isTemplate = image.isTemplate
+        canvas.accessibilityDescription = image.accessibilityDescription
+        return canvas
+    }
+
+    /// Row icons sit on the shared canvas; larger header icons (size above the row size) are returned as is.
+    static func symbol(_ name: String, tint: NSColor, description: String, size: CGFloat = iconPointSize) -> NSImage? {
         let base = NSImage(systemSymbolName: name, accessibilityDescription: description)
         // Two palette colors keep the glyph inside filled circles (check, pause) legible.
         let configuration = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
             .applying(NSImage.SymbolConfiguration(paletteColors: name.hasSuffix(".fill") ? [.white, tint] : [tint]))
-        return base?.withSymbolConfiguration(configuration)
+        let image = base?.withSymbolConfiguration(configuration)
+        return size > iconPointSize ? image : fixed(image)
     }
 
     /// The system’s multicolor warning triangle, matching macOS alerts in both appearances.
-    static func warning(size: CGFloat = 13) -> NSImage? {
-        NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs attention")?
+    static func warning(size: CGFloat = iconPointSize) -> NSImage? {
+        let image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs attention")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
                 .applying(.preferringMulticolor()))
+        return size > iconPointSize ? image : fixed(image)
     }
 
     /// Monochrome control icon, so every top-level row shares one icon column and one text column.
     static func control(_ name: String, _ description: String) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: description)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+        fixed(NSImage(systemSymbolName: name, accessibilityDescription: description)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: iconPointSize, weight: .regular)))
     }
 
     /// Two lines: a primary title over smaller secondary context.
@@ -258,11 +277,13 @@ final class MenuStatusView: NSView {
     private let detail = NSTextField(labelWithString: "")
     private var iconCenter: NSLayoutConstraint!
     private var textLeading: NSLayoutConstraint!
-    /// Native rows sit 8pt further right when any row shows a checkmark; the header follows them.
-    private var inset: CGFloat { hasStateColumn ? 48 : 40 }
+    /// Native row text starts 30pt plus the icon canvas from the menu edge, or 8pt less when no row
+    /// shows a checkmark. Icons are centered 7.5pt before the text. The header follows both.
+    private var inset: CGFloat { (hasStateColumn ? 30 : 22) + MenuStyle.iconCanvas.width }
+    private var iconOffset: CGFloat { inset - 7.5 - MenuStyle.iconCanvas.width / 2 }
     var hasStateColumn = true {
         didSet {
-            iconCenter.constant = inset - 15
+            iconCenter.constant = iconOffset
             textLeading.constant = inset
         }
     }
@@ -282,7 +303,7 @@ final class MenuStatusView: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        iconCenter = icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: inset - 15)
+        iconCenter = icon.centerXAnchor.constraint(equalTo: leadingAnchor, constant: iconOffset)
         textLeading = text.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset)
         NSLayoutConstraint.activate([
             iconCenter,
