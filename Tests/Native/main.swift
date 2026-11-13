@@ -30,18 +30,19 @@ MainActor.assumeIsolated {
         @MainActor func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
         let controls = views(window.contentView!)
         let buttons = controls.compactMap { $0 as? NSButton }
-        let event = buttons.first { $0.identifier?.rawValue == "opened" }!
+        let switches = controls.compactMap { $0 as? NSSwitch }
+        let event = switches.first { $0.identifier?.rawValue == "opened" }!
         event.performClick(nil)
         require(!NotificationPreferences(defaults: config.defaults).isEnabled(.opened), "real event action saved and read back")
-        let issueToggle = buttons.first { $0.identifier?.rawValue == "issueOpened" }!
+        let issueToggle = switches.first { $0.identifier?.rawValue == "issueOpened" }!
         issueToggle.performClick(nil)
         require(!delegate.preferences.isEnabled(.issueOpened), "issue toggle saves preference")
         issueToggle.performClick(nil)
-        let commentToggle = buttons.first { $0.identifier?.rawValue == "commented" }!
+        let commentToggle = switches.first { $0.identifier?.rawValue == "commented" }!
         commentToggle.performClick(nil)
         require(!delegate.preferences.isEnabled(.commented), "comment toggle saves preference")
         commentToggle.performClick(nil)
-        let sound = buttons.first { $0.title == "Play celebration sounds" }!
+        let sound = switches.first { $0.accessibilityLabel() == "Play celebration sounds" }!
         sound.performClick(nil)
         require(!delegate.preferences.soundEnabled, "real sound action saved")
         require(delegate.menu.items.first { $0.title == "Play Celebration Sound" }?.state == .off, "settings action synchronized menu")
@@ -55,6 +56,15 @@ MainActor.assumeIsolated {
         let remove = views(window.contentView!).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "owner/repo" }!
         remove.performClick(nil)
         require(NotificationPreferences(defaults: config.defaults).ignoredRepositories.isEmpty, "real remove action saved")
+        let visible = window.screen!.visibleFrame
+        window.setFrameOrigin(NSPoint(x: window.frame.minX, y: visible.minY))
+        let heightBeforeGrowth = window.frame.height
+        field.stringValue = "owner/tall"
+        buttons.first { $0.title == "Add" }!.performClick(nil)
+        print("Window height \(heightBeforeGrowth) -> \(window.frame.height)")
+        require(window.frame.minY >= visible.minY, "window grows for a new repository without leaving the screen")
+        views(window.contentView!).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "owner/tall" }!.performClick(nil)
+        window.center()
         let popups = controls.compactMap { $0 as? NSPopUpButton }
         let pack = popups.first { $0.accessibilityLabel() == "Sound pack" }!
         require(pack.titleOfSelectedItem == "Peon", "default sound pack is visible")
