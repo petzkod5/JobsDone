@@ -99,7 +99,7 @@ final class NotificationSettingsController: NSWindowController {
             (.merged, "PR merged", "“Job’s done” when your PR merges."),
             (.committed, "Commits by others on your PRs", "“Hmmm?” for commits by other authors, including bots."),
             (.commented, "Comments by others on your PRs", "“Get ’em!” for conversation, inline, and review comments."),
-            (.issueOpened, "Issues in your repositories", "“Something need doing?” when anyone opens an issue.")
+            (.issueOpened, "Issues opened in your repositories", "“Something need doing?” when anyone opens an issue.")
         ] {
             let toggle = NSSwitch()
             toggle.controlSize = .mini
@@ -175,7 +175,7 @@ final class NotificationSettingsController: NSWindowController {
         emptyRepositories.setContent(empty)
         repositoryGroup.add(emptyRepositories)
         return FormSection(title: "Ignored repositories", accessory: repositoryCount, group: repositoryGroup,
-                           footer: FormText.footnote("Events from these repositories stay in history and never notify."))
+                           footer: FormText.footnote("Events from ignored repositories stay in history and never notify."))
     }
 
     private func link(_ title: String, action: Selector) -> NSButton {
@@ -222,7 +222,7 @@ final class NotificationSettingsController: NSWindowController {
         for (event, toggle) in eventSwitches { toggle.state = preferences.isEnabled(event) ? .on : .off }
         soundPack.selectItem(at: preferences.soundPacks.packs.firstIndex { $0.id == preferences.soundPack.id } ?? 0)
         soundSwitch.state = preferences.soundEnabled ? .on : .off
-        soundStatus.stringValue = "macOS has turned off sound for Job’s Done. Turn it on with the link below."
+        soundStatus.stringValue = "macOS sound is off for Job’s Done. Turn it on in macOS Notification Settings below."
         soundStatus.isHidden = self.systemSoundAllowed || !preferences.soundEnabled
         soundSwitch.setAccessibilityHelp(soundStatus.isHidden ? "macOS permission and Focus settings also apply." : soundStatus.stringValue)
         soundPack.isEnabled = preferences.soundEnabled
