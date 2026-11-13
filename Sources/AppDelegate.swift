@@ -142,7 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return permission + [deliveryWarning, soundWarning, startupError].compactMap { $0 }.count
     }
 
-    /// Headline, detail, and icon for the status header. Any warning row below turns the header orange.
+    /// Headline, detail, and icon for the status header. Warning rows below turn the header orange; while
+    /// paused or checking, the header keeps its state icon and shows the problem count instead.
     private var statusSummary: (String, String, NSImage?) {
         let every = "every \(ActivityFormat.interval(preferences.pollingInterval))"
         let account = login.isEmpty ? "" : " @\(login)"
@@ -153,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let detail = busy ? "Finishing the current check…" : below ?? "Resume to catch up on missed events"
             return ("Paused", detail, icon("pause.circle.fill", .systemGray))
         }
-        if busy { return ("Checking GitHub…", "Watching\(account) · \(every)", icon("arrow.triangle.2.circlepath.circle.fill", .systemBlue)) }
+        if busy { return ("Checking GitHub…", below ?? "Watching\(account) · \(every)", icon("arrow.triangle.2.circlepath.circle.fill", .systemBlue)) }
         if let monitorError {
             let reason = monitorError.split(whereSeparator: \.isNewline).first.map(String.init) ?? monitorError
             return ("Monitoring needs attention", MenuCopy.truncated(reason, limit: 48), MenuStyle.warning(size: 15))
@@ -309,7 +310,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         statusRow?.title = "\(headline) — \(detail)"
         statusView.update(headline: headline, detail: detail, image: image)
         statusView.toolTip = status
-        monitorErrorRow?.isHidden = busy || monitorError == nil
+        // Disabled rather than hidden during a check, so rows don't shift under the pointer.
+        monitorErrorRow?.isHidden = monitorError == nil
+        monitorErrorRow?.isEnabled = !busy
         monitorErrorRow?.toolTip = monitorError
         permissionRow?.title = notificationState.actionTitle
         permissionRow?.isHidden = notificationState == .ready || notificationState == .checking

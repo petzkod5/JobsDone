@@ -184,7 +184,7 @@ enum MenuStyle {
         guard let image else { return nil }
         let canvas = NSImage(size: iconCanvas, flipped: false) { rect in
             let origin = NSPoint(x: rect.midX - image.size.width / 2, y: rect.midY - image.size.height / 2)
-            image.draw(in: NSRect(origin: origin, size: image.size).integral)
+            image.draw(in: NSRect(origin: NSPoint(x: origin.x.rounded(), y: origin.y.rounded()), size: image.size))
             return true
         }
         canvas.isTemplate = image.isTemplate
@@ -314,6 +314,8 @@ final class MenuStatusView: NSView {
         ])
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
+        // The header's own label already says the state; the symbol name would only add noise.
+        icon.setAccessibilityElement(false)
     }
 
     @available(*, unavailable)
