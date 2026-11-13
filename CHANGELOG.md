@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/petzkod5/JobsDone/compare/v1.7.0...v1.7.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **release:** avoid deprecated Homebrew macOS comparison ([#32](https://github.com/petzkod5/JobsDone/issues/32)) ([c9b47d9](https://github.com/petzkod5/JobsDone/commit/c9b47d9039cf35ffe36651cf054ce47d531c869a))
+
 ## [1.7.0](https://github.com/petzkod5/JobsDone/compare/v1.6.0...v1.7.0) (2026-11-13)
 
 
