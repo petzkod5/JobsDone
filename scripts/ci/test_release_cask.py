@@ -13,6 +13,7 @@ class ReleaseCaskTests(unittest.TestCase):
             def generate(version, digest):
                 return subprocess.run(["python3", str(SCRIPT), version, digest, "petzkod5/JobsDone", str(target)], capture_output=True, text=True)
             self.assertEqual(generate("1.3.0", "a" * 64).returncode, 0)
+            self.assertIn('  depends_on macos: :ventura\n', target.read_text())
             original = target.read_bytes()
             self.assertEqual(generate("1.3.0", "a" * 64).returncode, 0)
             self.assertEqual(target.read_bytes(), original)

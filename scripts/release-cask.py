@@ -35,7 +35,7 @@ target.write_text(f'''cask "jobsdone" do
   homepage "https://github.com/{repo}"
 
   depends_on formula: "gh"
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Job’s Done.app"
 end
